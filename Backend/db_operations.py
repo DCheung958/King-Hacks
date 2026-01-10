@@ -1,0 +1,217 @@
+"""
+Database CRUD Operations for Echocare
+Provides functions to interact with the database tables
+"""
+
+from uuid import UUID, uuid4
+from datetime import datetime
+from typing import Optional, List, Dict, Any
+from database import database
+from models import users, voice_samples, conversations, messages
+
+
+# ========== USER OPERATIONS ==========
+
+async def create_user(email: str, name: Optional[str] = None) -> Dict[str, Any]:
+    """Create a new user"""
+    user_id = uuid4()
+    query = users.insert().values(
+        id=user_id,
+        email=email,
+        name=name,
+        created_at=datetime.utcnow()
+    )
+    await database.execute(query)
+    return {"id": str(user_id), "email": email, "name": name}
+
+
+async def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    """Get user by email"""
+    query = users.select().where(users.c.email == email)
+    result = await database.fetch_one(query)
+    if result:
+        return dict(result)
+    return None
+
+
+async def get_user_by_id(user_id: UUID) -> Optional[Dict[str, Any]]:
+    """Get user by ID"""
+    query = users.select().where(users.c.id == user_id)
+    result = await database.fetch_one(query)
+    if result:
+        return dict(result)
+    return None
+
+
+# ========== VOICE SAMPLE OPERATIONS ==========
+
+async def create_voice_sample(
+    filename: str,
+    user_id: Optional[UUID] = None
+) -> Dict[str, Any]:
+    """Create a new voice sample record"""
+    sample_id = uuid4()
+    query = voice_samples.insert().values(
+        id=sample_id,
+        user_id=user_id,
+        filename=filename,
+        uploaded_at=datetime.utcnow()
+    )
+    await database.execute(query)
+    return {
+        "id": str(sample_id),
+        "user_id": str(user_id) if user_id else None,
+        "filename": filename,
+        "uploaded_at": datetime.utcnow().isoformat()
+    }
+
+
+async def get_voice_samples_by_user(user_id: UUID) -> List[Dict[str, Any]]:
+    """Get all voice samples for a user"""
+    query = voice_samples.select().where(
+        voice_samples.c.user_id == user_id
+    ).order_by(voice_samples.c.uploaded_at.desc())
+    results = await database.fetch_all(query)
+    return [dict(row) for row in results]
+
+
+async def get_voice_sample_by_id(sample_id: UUID) -> Optional[Dict[str, Any]]:
+    """Get a voice sample by ID"""
+    query = voice_samples.select().where(voice_samples.c.id == sample_id)
+    result = await database.fetch_one(query)
+    if result:
+        return dict(result)
+    return None
+
+
+# ========== CONVERSATION OPERATIONS ==========
+
+async def create_conversation(user_id: UUID) -> Dict[str, Any]:
+    """Create a new conversation"""
+    conversation_id = uuid4()
+    query = conversations.insert().values(
+        id=conversation_id,
+        user_id=user_id,
+        created_at=datetime.utcnow()
+    )
+    await database.execute(query)
+    return {
+        "id": str(conversation_id),
+        "user_id": str(user_id),
+        "created_at": datetime.utcnow().isoformat()
+    }
+
+
+async def get_conversations_by_user(
+    user_id: UUID,
+    limit: int = 50
+) -> List[Dict[str, Any]]:
+    """Get all conversations for a user, ordered by most recent"""
+    query = conversations.select().where(
+        conversations.c.user_id == user_id
+    ).order_by(conversations.c.created_at.desc()).limit(limit)
+    results = await database.fetch_all(query)
+    return [dict(row) for row in results]
+
+
+async def get_conversation_by_id(conversation_id: UUID) -> Optional[Dict[str, Any]]:
+    """Get a conversation by ID"""
+    query = conversations.select().where(conversations.c.id == conversation_id)
+    result = await database.fetch_one(query)
+    if result:
+        return dict(result)
+    return None
+
+
+# ========== MESSAGE OPERATIONS ==========
+
+async def create_message(
+    conversation_id: UUID,
+    role: str,
+    text: str,
+    emotion: Optional[str] = None
+) -> Dict[str, Any]:
+    """Create a new message in a conversation"""
+    if role not in ["user", "assistant"]:
+        raise ValueError("Role must be 'user' or 'assistant'")
+    
+    message_id = uuid4()
+    query = messages.insert().values(
+        id=message_id,
+        conversation_id=conversation_id,
+        role=role,
+        text=text,
+        emotion=emotion,
+        timestamp=datetime.utcnow()
+    )
+    await database.execute(query)
+    return {
+        "id": str(message_id),
+        "conversation_id": str(conversation_id),
+        "role": role,
+        "text": text,
+        "emotion": emotion,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+
+async def get_messages_by_conversation(
+    conversation_id: UUID,
+    limit: int = 100
+) -> List[Dict[str, Any]]:
+    """Get all messages for a conversation, ordered by timestamp"""
+    query = messages.select().where(
+        messages.c.conversation_id == conversation_id
+    ).order_by(messages.c.timestamp.asc()).limit(limit)
+    results = await database.fetch_all(query)
+    return [dict(row) for row in results]
+
+
+async def get_conversation_history(
+    conversation_id: UUID
+) -> List[Dict[str, Any]]:
+    """Get full conversation history with messages ordered chronologically"""
+    messages_list = await get_messages_by_conversation(conversation_id)
+    return messages_list
+
+
+# ========== UTILITY FUNCTIONS ==========
+
+async def get_or_create_user(email: str, name: Optional[str] = None) -> Dict[str, Any]:
+    """Get existing user or create a new one"""
+    user = await get_user_by_email(email)
+    if user:
+        return user
+    return await create_user(email, name)
+
+
+async def create_conversation_with_message(
+    user_id: UUID,
+    user_text: str,
+    assistant_text: str,
+    emotion: Optional[str] = None
+) -> Dict[str, Any]:
+    """Create a conversation and initial user/assistant message pair"""
+    # Create conversation
+    conversation = await create_conversation(user_id)
+    conversation_id = UUID(conversation["id"])
+    
+    # Create user message
+    await create_message(
+        conversation_id=conversation_id,
+        role="user",
+        text=user_text,
+        emotion=emotion
+    )
+    
+    # Create assistant message
+    await create_message(
+        conversation_id=conversation_id,
+        role="assistant",
+        text=assistant_text
+    )
+    
+    # Return conversation with messages
+    conversation["messages"] = await get_messages_by_conversation(conversation_id)
+    return conversation
+
