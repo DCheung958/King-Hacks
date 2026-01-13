@@ -7,22 +7,40 @@ import uuid
 import shutil
 import os
 from pathlib import Path
-from database import database
-from models import users, voice_samples, conversations, messages
-from api_routes import router as api_router
+# Database imports (optional - gracefully handle if not available)
+try:
+    from database import database
+    from models import users, voice_samples, conversations, messages
+    from api_routes import router as api_router
+    DB_AVAILABLE = True
+except ImportError:
+    print("Warning: Database packages not installed. Running in mock mode without database.")
+    DB_AVAILABLE = False
+    database = None
+    api_router = None
 
 app = FastAPI(title="Echocare Backend API", version="1.0.0")
 
-# Include additional API routes
-app.include_router(api_router)
+# Include additional API routes if available
+if DB_AVAILABLE and api_router:
+    app.include_router(api_router)
 
 @app.on_event("startup")
 async def startup():
-    await database.connect()
+    if DB_AVAILABLE and database:
+        try:
+            await database.connect()
+        except Exception as e:
+            print(f"Warning: Could not connect to database: {e}")
+            print("Running in mock mode without database.")
 
 @app.on_event("shutdown")
 async def shutdown():
-    await database.disconnect()
+    if DB_AVAILABLE and database:
+        try:
+            await database.disconnect()
+        except Exception:
+            pass
 
 # Allow CORS for frontend (Vite dev server + production)
 app.add_middleware(
@@ -162,9 +180,16 @@ async def generate_response(
     response_index = len(req.text) % len(THERAPEUTIC_RESPONSES)
     response_text = THERAPEUTIC_RESPONSES[response_index]
     
-    # Save to database if user_id provided
-    if user_id:
+    # Save to database if user_id provided and DB is available
+    if user_id and DB_AVAILABLE:
         try:
+            from db_operations import (
+                create_conversation,
+                get_conversation_by_id,
+                create_message,
+            )
+            from uuid import UUID
+            
             user_uuid = UUID(user_id)
             conv_uuid = None
             
@@ -218,8 +243,6 @@ async def upload_voice_sample(
     Supported formats: webm, mp3, wav, ogg
     Optional: user_id to associate with a user
     """
-    from db_operations import create_voice_sample
-    
     # Validate file type
     allowed_extensions = {".webm", ".mp3", ".wav", ".ogg", ".m4a"}
     file_extension = Path(file.filename).suffix.lower()
@@ -241,15 +264,20 @@ async def upload_voice_sample(
         
         file_size = filepath.stat().st_size
         
-        # Store record in database
-        user_uuid = None
-        if user_id:
+        # Store record in database if available
+        if DB_AVAILABLE:
             try:
-                user_uuid = uuid.UUID(user_id)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid user_id format")
-        
-        voice_sample = await create_voice_sample(filename=filename, user_id=user_uuid)
+                from db_operations import create_voice_sample
+                user_uuid = None
+                if user_id:
+                    try:
+                        user_uuid = uuid.UUID(user_id)
+                    except ValueError:
+                        raise HTTPException(status_code=400, detail="Invalid user_id format")
+                
+                await create_voice_sample(filename=filename, user_id=user_uuid)
+            except Exception as e:
+                print(f"Warning: Failed to save to database: {e}")
         
         # In real implementation, this file would be sent to ElevenLabs for voice cloning
         # For now, we just store it and acknowledge

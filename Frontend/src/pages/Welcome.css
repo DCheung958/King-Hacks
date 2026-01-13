@@ -1,0 +1,170 @@
+.welcome-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: linear-gradient(180deg, #f5f7fa 0%, #e8f0f5 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.welcome-container {
+  max-width: 600px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  z-index: 1;
+}
+
+/* Logo Circle */
+.logo-circle {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #20b2aa 0%, #48d1cc 50%, transparent 70%);
+  box-shadow: 0 0 40px rgba(32, 178, 170, 0.4);
+  margin-bottom: 2rem;
+  animation: glow 3s ease-in-out infinite;
+}
+
+@keyframes glow {
+  0%, 100% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+/* Title */
+.welcome-title {
+  font-size: 3rem;
+  font-weight: 700;
+  margin: 0 0 1rem 0;
+  color: #2c3e50;
+  line-height: 1.2;
+}
+
+.title-echocare {
+  color: #20b2aa;
+  font-weight: 700;
+}
+
+/* Description */
+.welcome-description {
+  font-size: 1.1rem;
+  color: #5a6c7d;
+  line-height: 1.6;
+  margin: 0 0 3rem 0;
+  max-width: 500px;
+}
+
+/* Feature Cards */
+.feature-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  margin-bottom: 3rem;
+}
+
+.feature-card {
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+
+.feature-icon {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+  filter: grayscale(0.3) brightness(0.9);
+}
+
+.feature-title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0 0 0.5rem 0;
+}
+
+.feature-description {
+  font-size: 1rem;
+  color: #5a6c7d;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Begin Journey Button */
+.begin-journey-button {
+  width: 100%;
+  max-width: 400px;
+  padding: 1.2rem 2rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: white;
+  border: none;
+  border-radius: 50px;
+  background: linear-gradient(90deg, #20b2aa 0%, #9370db 100%);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 20px rgba(32, 178, 170, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.begin-journey-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.begin-journey-button:hover::before {
+  left: 100%;
+}
+
+.begin-journey-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 30px rgba(32, 178, 170, 0.4);
+}
+
+.begin-journey-button:active {
+  transform: translateY(0);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .welcome-title {
+    font-size: 2.2rem;
+  }
+
+  .welcome-description {
+    font-size: 1rem;
+  }
+
+  .feature-card {
+    padding: 1.5rem;
+  }
+
+  .logo-circle {
+    width: 100px;
+    height: 100px;
+  }
+}
+

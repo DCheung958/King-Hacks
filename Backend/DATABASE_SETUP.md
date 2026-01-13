@@ -12,7 +12,7 @@
    ```
 
 ## Quick Setup
-
++
 ### Option 1: Using SQL Migration Script (Recommended)
 
 1. **Run the migration script:**
