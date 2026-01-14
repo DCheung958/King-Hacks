@@ -2,6 +2,8 @@
 
 FastAPI backend for the Echocare therapeutic conversation application. Currently uses mocked endpoints for emotion detection, response generation, and speech synthesis (ready for ElevenLabs integration).
 
+> **📖 First time setting up?** See **[GETTING_STARTED.md](../GETTING_STARTED.md)** for complete setup instructions from scratch.
+
 ## Setup
 
 1. **Install dependencies:**

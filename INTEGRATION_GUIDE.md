@@ -1,5 +1,7 @@
 # Echocare - Frontend-Backend Integration Guide
 
+> **📖 First time setting up?** See **[GETTING_STARTED.md](./GETTING_STARTED.md)** for complete setup instructions from scratch.
+
 ## Quick Start
 
 ### 1. Start the Backend

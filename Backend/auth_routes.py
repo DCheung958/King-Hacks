@@ -16,6 +16,16 @@ except ImportError:
     DB_AVAILABLE = False
     database = None
 
+def is_database_connected():
+    """Check if database is actually connected"""
+    if not DB_AVAILABLE or database is None:
+        return False
+    try:
+        # Check if database has a connection pool (means it's connected)
+        return hasattr(database, '_database') and database._database._pool is not None
+    except (AttributeError, AssertionError):
+        return False
+
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 
 
@@ -38,10 +48,10 @@ async def login(credentials: LoginRequest):
     """
     Login endpoint - only logs in existing users
     """
-    if not DB_AVAILABLE or database is None:
+    if not is_database_connected():
         raise HTTPException(
             status_code=503,
-            detail="Database is not available. Please set up the database first."
+            detail="Database is not available. Please set up the database first. Check your PostgreSQL connection and credentials."
         )
     
     email = credentials.email.strip().lower()
@@ -51,10 +61,16 @@ async def login(credentials: LoginRequest):
         raise HTTPException(status_code=400, detail="Email and password are required")
     
     # Check if user exists (try email first, then username)
-    user = await get_user_by_email(email)
-    if not user:
-        # Try username
-        user = await get_user_by_username(email)
+    try:
+        user = await get_user_by_email(email)
+        if not user:
+            # Try username
+            user = await get_user_by_username(email)
+    except (AssertionError, AttributeError) as e:
+        raise HTTPException(
+            status_code=503,
+            detail="Database connection error. Please ensure PostgreSQL is running and credentials are correct."
+        )
     
     if not user:
         raise HTTPException(status_code=404, detail="User not found. Please create an account first.")
@@ -91,10 +107,10 @@ async def signup(credentials: SignupRequest):
     """
     Signup endpoint - only creates new accounts
     """
-    if not DB_AVAILABLE or database is None:
+    if not is_database_connected():
         raise HTTPException(
             status_code=503,
-            detail="Database is not available. Please set up the database first."
+            detail="Database is not available. Please set up the database first. Check your PostgreSQL connection and credentials."
         )
     
     email = credentials.email.strip().lower()
@@ -126,9 +142,15 @@ async def signup(credentials: SignupRequest):
         )
     
     # Check if user already exists
-    existing_user = await get_user_by_email(email)
-    if existing_user:
-        raise HTTPException(status_code=400, detail="An account with this email already exists. Please sign in instead.")
+    try:
+        existing_user = await get_user_by_email(email)
+        if existing_user:
+            raise HTTPException(status_code=400, detail="An account with this email already exists. Please sign in instead.")
+    except (AssertionError, AttributeError) as e:
+        raise HTTPException(
+            status_code=503,
+            detail="Database connection error. Please ensure PostgreSQL is running and credentials are correct."
+        )
     
     # Create user with password
     try:
@@ -151,6 +173,11 @@ async def signup(credentials: SignupRequest):
     except HTTPException:
         # Re-raise HTTP exceptions as-is
         raise
+    except (AssertionError, AttributeError) as e:
+        raise HTTPException(
+            status_code=503,
+            detail="Database connection error. Please ensure PostgreSQL is running and credentials are correct."
+        )
     except Exception as e:
         error_msg = str(e).lower()
         if "unique constraint" in error_msg or "already exists" in error_msg:

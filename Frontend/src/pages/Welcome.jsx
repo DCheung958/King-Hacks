@@ -52,8 +52,8 @@ const Welcome = () => {
         localStorage.setItem('user_name', data.name);
       }
 
-      // Redirect to chat
-      navigate('/chat');
+      // Redirect to onboarding
+      navigate('/onboarding');
     } catch (err) {
       setError(err.message || 'An error occurred. Please try again.');
       console.error('Sign in error:', err);
