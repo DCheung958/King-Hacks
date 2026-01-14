@@ -7,6 +7,29 @@ import uuid
 import shutil
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Get ElevenLabs API key from environment
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+
+# Initialize ElevenLabs client (only if API key is available)
+try:
+    from elevenlabs import ElevenLabs
+    if ELEVENLABS_API_KEY:
+        elevenlabs = ElevenLabs(api_key=ELEVENLABS_API_KEY)
+        ELEVENLABS_AVAILABLE = True
+    else:
+        elevenlabs = None
+        ELEVENLABS_AVAILABLE = False
+        print("Warning: ELEVENLABS_API_KEY not found in environment. ElevenLabs features will be disabled.")
+except ImportError:
+    elevenlabs = None
+    ELEVENLABS_AVAILABLE = False
+    print("Warning: elevenlabs package not installed. Install with: pip install elevenlabs")
+
 # Database imports (optional - gracefully handle if not available)
 try:
     from database import database
@@ -88,6 +111,7 @@ class VoiceSampleResponse(BaseModel):
     message: str
     filename: str
     file_size: int
+    voice_id: Optional[str] = None  # ElevenLabs voice ID after cloning
 
 # Mock therapeutic responses
 THERAPEUTIC_RESPONSES = [
@@ -100,10 +124,26 @@ THERAPEUTIC_RESPONSES = [
     "Your feelings are important and valid. We can navigate this step by step.",
 ]
 
-# Mock emotion detection (simple keyword-based for now)
+# Try to import emotion detection model
+try:
+    from emotion_model import detect_emotion, EMOTION_MODEL_AVAILABLE
+    HF_MODEL_AVAILABLE = EMOTION_MODEL_AVAILABLE
+except ImportError:
+    HF_MODEL_AVAILABLE = False
+    print("Warning: emotion_model not available. Using mock emotion detection.")
+
+# Try to import response generation model
+try:
+    from response_model import generate_therapeutic_response, RESPONSE_MODEL_AVAILABLE
+    AI_RESPONSE_AVAILABLE = RESPONSE_MODEL_AVAILABLE
+except ImportError:
+    AI_RESPONSE_AVAILABLE = False
+    print("Warning: response_model not available. Using mock response generation.")
+
+# Mock emotion detection (fallback if Hugging Face model not available)
 def mock_detect_emotion(text: str) -> tuple[str, float]:
     """
-    Mock emotion detection - will be replaced with Hugging Face model later.
+    Mock emotion detection - fallback when Hugging Face model is not available.
     Returns (emotion, confidence)
     """
     text_lower = text.lower()
@@ -139,14 +179,24 @@ def health_check():
     return {"status": "healthy", "upload_dir_exists": UPLOAD_DIR.exists()}
 
 @app.post("/api/emotion", response_model=EmotionResponse)
-async def detect_emotion(req: EmotionRequest):
+async def detect_emotion_endpoint(req: EmotionRequest):
     """
-    Detect emotion from user text (MOCKED - will use Hugging Face model later)
+    Detect emotion from user text using Hugging Face model (with fallback to mock)
     """
     if not req.text or not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
-    emotion, confidence = mock_detect_emotion(req.text)
+    # Use Hugging Face model if available, otherwise fall back to mock
+    try:
+        if HF_MODEL_AVAILABLE:
+            from emotion_model import detect_emotion
+            emotion, confidence = detect_emotion(req.text.strip())
+        else:
+            emotion, confidence = mock_detect_emotion(req.text.strip())
+    except Exception as e:
+        # If model fails, fall back to mock
+        print(f"Warning: Emotion detection model failed: {e}. Using mock detection.")
+        emotion, confidence = mock_detect_emotion(req.text.strip())
     
     return EmotionResponse(
         emotion=emotion,
@@ -160,7 +210,7 @@ async def generate_response(
     conversation_id: Optional[str] = None
 ):
     """
-    Generate empathetic therapeutic response (MOCKED - will use AI model later)
+    Generate empathetic therapeutic response using AI model (with fallback to mock)
     Optionally saves to database if user_id and conversation_id provided
     """
     from db_operations import (
@@ -174,22 +224,37 @@ async def generate_response(
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
     # Detect emotion if not provided
-    emotion, _ = mock_detect_emotion(req.text) if not req.emotion else (req.emotion, 0.7)
-    
-    # Select response based on text length (simple mock)
-    response_index = len(req.text) % len(THERAPEUTIC_RESPONSES)
-    response_text = THERAPEUTIC_RESPONSES[response_index]
-    
-    # Save to database if user_id provided and DB is available
-    if user_id and DB_AVAILABLE:
+    if not req.emotion:
         try:
-            from db_operations import (
-                create_conversation,
-                get_conversation_by_id,
-                create_message,
-            )
-            from uuid import UUID
-            
+            if HF_MODEL_AVAILABLE:
+                from emotion_model import detect_emotion
+                emotion, _ = detect_emotion(req.text.strip())
+            else:
+                emotion, _ = mock_detect_emotion(req.text.strip())
+        except Exception as e:
+            print(f"Warning: Emotion detection failed: {e}. Using mock detection.")
+            emotion, _ = mock_detect_emotion(req.text.strip())
+    else:
+        emotion = req.emotion
+    
+    # Generate response using AI model if available, otherwise use mock
+    try:
+        if AI_RESPONSE_AVAILABLE:
+            from response_model import generate_therapeutic_response
+            response_text = generate_therapeutic_response(req.text.strip(), emotion)
+        else:
+            # Fallback to mock responses
+            response_index = len(req.text) % len(THERAPEUTIC_RESPONSES)
+            response_text = THERAPEUTIC_RESPONSES[response_index]
+    except Exception as e:
+        # If AI model fails, fall back to mock
+        print(f"Warning: Response generation model failed: {e}. Using mock responses.")
+        response_index = len(req.text) % len(THERAPEUTIC_RESPONSES)
+        response_text = THERAPEUTIC_RESPONSES[response_index]
+    
+    # Save to database if user_id provided
+    if user_id:
+        try:
             user_uuid = UUID(user_id)
             conv_uuid = None
             
@@ -243,8 +308,18 @@ async def upload_voice_sample(
     Supported formats: webm, mp3, wav, ogg
     Optional: user_id to associate with a user
     """
+    from db_operations import create_voice_sample
+    
     # Validate file type
     allowed_extensions = {".webm", ".mp3", ".wav", ".ogg", ".m4a"}
+    
+    # Handle case where filename might be None or empty
+    if not file.filename:
+        raise HTTPException(
+            status_code=400,
+            detail="File must have a filename"
+        )
+    
     file_extension = Path(file.filename).suffix.lower()
     
     if file_extension not in allowed_extensions:
@@ -264,10 +339,24 @@ async def upload_voice_sample(
         
         file_size = filepath.stat().st_size
         
+        # Clone voice with ElevenLabs if available
+        voice_id = None
+        if ELEVENLABS_AVAILABLE and elevenlabs:
+            try:
+                from elevenlabs import Voice, VoiceSettings
+                voice = elevenlabs.voices.add(
+                    name=f"Echocare Voice {uuid.uuid4()}",
+                    files=[str(filepath)]
+                )
+                voice_id = voice.voice_id
+                print(f"Voice cloned successfully. Voice ID: {voice_id}")
+            except Exception as e:
+                print(f"Warning: Failed to clone voice with ElevenLabs: {e}")
+                # Continue without voice_id - file is still saved
+        
         # Store record in database if available
         if DB_AVAILABLE:
             try:
-                from db_operations import create_voice_sample
                 user_uuid = None
                 if user_id:
                     try:
@@ -279,13 +368,13 @@ async def upload_voice_sample(
             except Exception as e:
                 print(f"Warning: Failed to save to database: {e}")
         
-        # In real implementation, this file would be sent to ElevenLabs for voice cloning
-        # For now, we just store it and acknowledge
+        response_message = "Voice sample uploaded and cloned" if voice_id else "Voice sample uploaded successfully"
         
         return VoiceSampleResponse(
-            message="Voice sample uploaded successfully",
+            message=response_message,
             filename=filename,
-            file_size=file_size
+            file_size=file_size,
+            voice_id=voice_id
         )
     except HTTPException:
         raise
@@ -295,31 +384,51 @@ async def upload_voice_sample(
 @app.post("/api/synthesize", response_model=SynthesizeResponse)
 async def synthesize_speech(req: SynthesizeRequest):
     """
-    Synthesize speech from text (MOCKED - will call ElevenLabs API later)
-    Returns a mock audio URL for now
+    Synthesize speech from text using ElevenLabs TTS
     """
     if not req.text or not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
-    # MOCKED: Return a sample audio URL
-    # In production, this will:
-    # 1. Call ElevenLabs API with the text and voice_id
-    # 2. Receive the generated audio
-    # 3. Store it or return a signed URL
-    # 4. Return the audio_url and duration
+    if not ELEVENLABS_AVAILABLE or not elevenlabs:
+        raise HTTPException(
+            status_code=503,
+            detail="ElevenLabs API is not configured. Please set ELEVENLABS_API_KEY in environment variables."
+        )
     
-    # Using a free sample audio URL for testing
-    # In production, this would be your own hosted audio or ElevenLabs CDN URL
-    audio_url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+    if not req.voice_id:
+        raise HTTPException(
+            status_code=400,
+            detail="voice_id is required for speech synthesis"
+        )
     
-    # Mock duration based on text length (average speaking rate: ~150 words/min)
-    word_count = len(req.text.split())
-    estimated_duration = (word_count / 150) * 60  # in seconds
-    
-    return SynthesizeResponse(
-        audio_url=audio_url,
-        duration=estimated_duration
-    )
+    try:
+        # Generate speech using ElevenLabs
+        audio = elevenlabs.text_to_speech.convert(
+            text=req.text,
+            voice_id=req.voice_id,
+            model_id="eleven_multilingual_v2"
+        )
+        
+        # Save audio to file
+        audio_filename = f"{uuid.uuid4()}.mp3"
+        audio_path = UPLOAD_DIR / audio_filename
+        
+        with open(audio_path, "wb") as f:
+            f.write(audio)
+        
+        # Return URL to the audio file
+        audio_url = f"http://localhost:8000/audio/{audio_filename}"
+        
+        return SynthesizeResponse(
+            audio_url=audio_url,
+            duration=None  # ElevenLabs doesn't return duration directly
+        )
+    except Exception as e:
+        print(f"Error synthesizing speech: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to synthesize speech: {str(e)}"
+        )
 
 @app.get("/api/voice-samples")
 async def list_voice_samples():
@@ -336,6 +445,31 @@ async def list_voice_samples():
                     "created": filepath.stat().st_mtime
                 })
     return {"samples": samples, "count": len(samples)}
+
+@app.get("/audio/{filename}")
+async def get_audio(filename: str):
+    """
+    Serve generated audio files
+    """
+    file_path = UPLOAD_DIR / filename
+    
+    # Security: prevent directory traversal
+    if not file_path.resolve().is_relative_to(UPLOAD_DIR.resolve()):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Audio not found")
+    
+    # Determine media type based on file extension
+    media_type = "audio/mpeg"  # Default to mp3
+    if filename.endswith(".wav"):
+        media_type = "audio/wav"
+    elif filename.endswith(".ogg"):
+        media_type = "audio/ogg"
+    elif filename.endswith(".webm"):
+        media_type = "audio/webm"
+    
+    return FileResponse(file_path, media_type=media_type)
 
 if __name__ == "__main__":
     import uvicorn
