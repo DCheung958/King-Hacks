@@ -9,6 +9,24 @@ print(f"\n[Database] Looking for .env file at: {env_path}")
 if env_path.exists():
     load_dotenv(dotenv_path=env_path)
     print(f"[Database] ✓ Found and loaded .env file")
+    
+    # Debug: Check what's actually in the .env file
+    with open(env_path, 'r') as f:
+        content = f.read()
+        lines = [line.strip() for line in content.split('\n') if line.strip() and not line.strip().startswith('#')]
+        print(f"[Database] Found {len(lines)} non-empty lines in .env file")
+        for i, line in enumerate(lines, 1):
+            if 'DATABASE_URL' in line:
+                # Hide password in output
+                if '@' in line:
+                    safe_line = line.split('@')[0].rsplit(':', 1)[0] + ':***@' + line.split('@')[1]
+                else:
+                    safe_line = line
+                print(f"[Database]   Line {i}: {safe_line}")
+            elif 'PASSWORD' in line.upper() or 'PASS' in line.upper():
+                print(f"[Database]   Line {i}: (contains password - hidden)")
+            else:
+                print(f"[Database]   Line {i}: {line[:50]}...")
 else:
     # Fallback to default location
     load_dotenv()
@@ -29,11 +47,17 @@ try:
     env_db_url = os.getenv("DATABASE_URL")
     if env_db_url:
         # Hide password in output
-        safe_url = env_db_url.split("@")[0].split(":")[-1] if "@" in env_db_url else "***"
-        print(f"[Database] ✓ Using DATABASE_URL from .env file (password: {safe_url}...)")
+        if "@" in env_db_url:
+            safe_url = env_db_url.split("@")[0].rsplit(":", 1)[0] + ":***"
+        else:
+            safe_url = "***"
+        print(f"[Database] ✓ Using DATABASE_URL from .env file")
+        print(f"[Database]   Connection: {safe_url}@...")
     else:
-        print(f"[Database] ⚠ Using DEFAULT DATABASE_URL (password: Postgresql4Life!)")
-        print(f"[Database]   If your password is different, add DATABASE_URL to .env file")
+        print(f"[Database] ⚠ DATABASE_URL NOT FOUND in environment variables!")
+        print(f"[Database]   Check .env file - make sure it contains:")
+        print(f"[Database]   DATABASE_URL=postgresql+asyncpg://postgres:YOUR_PASSWORD@localhost:5432/echocare_db")
+        print(f"[Database]   Using DEFAULT DATABASE_URL (password: Postgresql4Life!)")
     
     database = Database(DATABASE_URL)
     metadata = sqlalchemy.MetaData()
