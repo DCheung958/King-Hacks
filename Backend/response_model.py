@@ -33,13 +33,21 @@ except Exception as e:
     print("Falling back to mock response generation.")
 
 
-def generate_therapeutic_response(user_text: str, emotion: str = None) -> str:
+def generate_therapeutic_response(
+    user_text: str, 
+    emotion: str = None,
+    user_style: dict = None,
+    recent_messages: list = None
+) -> str:
     """
     Generate an empathetic therapeutic response using DialoGPT-medium
+    with user-specific style context
     
     Args:
         user_text: The user's input text
         emotion: Detected emotion (optional, used for context)
+        user_style: User's speech style characteristics (optional)
+        recent_messages: Recent user messages for context (optional)
         
     Returns:
         Generated therapeutic response text
@@ -47,11 +55,39 @@ def generate_therapeutic_response(user_text: str, emotion: str = None) -> str:
     if not RESPONSE_MODEL_AVAILABLE or tokenizer is None or model is None:
         raise RuntimeError("Response model not available. Use mock responses instead.")
     
-    # Create a therapeutic prompt (DialoGPT works well with conversational format)
+    # Build context-aware prompt
+    style_context = ""
+    if user_style and user_style.get("speech_style"):
+        style = user_style["speech_style"]
+        formality = style.get("formality", "neutral")
+        punctuation_style = style.get("punctuation_style", "normal")
+        
+        # Adapt to user's communication style
+        if formality == "casual":
+            style_context = "Respond in a friendly, casual, and conversational way"
+        elif formality == "formal":
+            style_context = "Respond in a respectful and thoughtful way"
+        else:
+            style_context = "Respond in a warm and friendly way"
+    
+    # Add common phrases if available
+    common_phrases = ""
+    if user_style and user_style.get("common_phrases"):
+        phrases = user_style["common_phrases"][:3]  # Top 3 phrases
+        if phrases:
+            common_phrases = f" The person often says things like: {', '.join(phrases)}."
+    
+    # Create a therapeutic prompt with style context
     if emotion:
-        prompt = f"I'm feeling {emotion}. {user_text}"
+        base_prompt = f"I'm feeling {emotion}. {user_text}"
     else:
-        prompt = user_text
+        base_prompt = user_text
+    
+    # Add style context to prompt
+    if style_context or common_phrases:
+        prompt = f"{style_context}.{common_phrases} {base_prompt}"
+    else:
+        prompt = base_prompt
     
     # Tokenize the prompt (DialoGPT expects EOS token for context)
     inputs = tokenizer.encode(prompt + tokenizer.eos_token, return_tensors="pt", max_length=512, truncation=True)

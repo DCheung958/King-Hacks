@@ -1,4 +1,4 @@
-.welcome-page {
+.profile-setup-page {
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -9,8 +9,8 @@
   overflow: hidden;
 }
 
-.welcome-container {
-  max-width: 600px;
+.profile-setup-container {
+  max-width: 450px;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -21,8 +21,8 @@
 
 /* Logo Circle */
 .logo-circle {
-  width: 120px;
-  height: 120px;
+  width: 100px;
+  height: 100px;
   border-radius: 50%;
   background: radial-gradient(circle, #20b2aa 0%, #48d1cc 50%, transparent 70%);
   box-shadow: 0 0 40px rgba(32, 178, 170, 0.4);
@@ -42,82 +42,29 @@
 }
 
 /* Title */
-.welcome-title {
-  font-size: 3rem;
+.profile-setup-title {
+  font-size: 2.5rem;
   font-weight: 700;
-  margin: 0 0 1rem 0;
+  margin: 0 0 0.5rem 0;
   color: #2c3e50;
   line-height: 1.2;
 }
 
-.title-echocare {
-  color: #20b2aa;
-  font-weight: 700;
-}
-
 /* Description */
-.welcome-description {
-  font-size: 1.1rem;
-  color: #5a6c7d;
-  line-height: 1.6;
-  margin: 0 0 3rem 0;
-  max-width: 500px;
-}
-
-/* Feature Cards */
-.feature-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  width: 100%;
-  margin-bottom: 3rem;
-}
-
-.feature-card {
-  background: white;
-  border-radius: 16px;
-  padding: 2rem;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.feature-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
-}
-
-.feature-icon {
-  font-size: 2.5rem;
-  margin-bottom: 1rem;
-  filter: grayscale(0.3) brightness(0.9);
-}
-
-.feature-title {
-  font-size: 1.3rem;
-  font-weight: 600;
-  color: #2c3e50;
-  margin: 0 0 0.5rem 0;
-}
-
-.feature-description {
+.profile-setup-description {
   font-size: 1rem;
   color: #5a6c7d;
-  line-height: 1.5;
-  margin: 0;
+  line-height: 1.6;
+  margin: 0 0 2rem 0;
 }
 
-/* Sign In Section */
-.signin-section {
+/* Form */
+.profile-setup-form {
   width: 100%;
-  max-width: 450px;
   background: white;
   border-radius: 16px;
   padding: 2rem;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-}
-
-.signin-form {
-  width: 100%;
 }
 
 .form-group {
@@ -171,7 +118,7 @@
   border: 1px solid #fcc;
 }
 
-.signin-button {
+.continue-button {
   width: 100%;
   padding: 1rem 2rem;
   font-size: 1.1rem;
@@ -186,76 +133,54 @@
   margin-bottom: 1rem;
 }
 
-.signin-button:hover:not(:disabled) {
+.continue-button:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 6px 25px rgba(32, 178, 170, 0.4);
 }
 
-.signin-button:active:not(:disabled) {
+.continue-button:active:not(:disabled) {
   transform: translateY(0);
 }
 
-.signin-button:disabled {
+.continue-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
 }
 
-.signup-divider {
-  text-align: center;
-  color: #6c757d;
-  font-size: 0.9rem;
-  margin: 1rem 0;
-  padding: 0.5rem 0;
-}
-
-.create-account-button {
+.skip-button {
   width: 100%;
-  padding: 1rem 2rem;
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: #20b2aa;
-  border: 2px solid #20b2aa;
-  border-radius: 50px;
-  background: white;
+  padding: 0.75rem 2rem;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #6c757d;
+  border: none;
+  background: transparent;
   cursor: pointer;
-  transition: all 0.3s ease;
-  margin-top: 0.5rem;
+  transition: color 0.3s ease;
 }
 
-.create-account-button:hover:not(:disabled) {
-  background: #f0fdfc;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(32, 178, 170, 0.2);
+.skip-button:hover:not(:disabled) {
+  color: #20b2aa;
 }
 
-.create-account-button:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.create-account-button:disabled {
+.skip-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-  transform: none;
 }
 
-/* Responsive Design */
+/* Responsive */
 @media (max-width: 768px) {
-  .welcome-title {
-    font-size: 2.2rem;
+  .profile-setup-page {
+    padding: 1rem;
   }
-
-  .welcome-description {
-    font-size: 1rem;
+  
+  .profile-setup-title {
+    font-size: 2rem;
   }
-
-  .feature-card {
+  
+  .profile-setup-form {
     padding: 1.5rem;
-  }
-
-  .logo-circle {
-    width: 100px;
-    height: 100px;
   }
 }
 

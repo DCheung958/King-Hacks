@@ -1,9 +1,11 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { detectEmotion, generateResponse } from '../services/chatService';
 import { synthesizeSpeech } from '../services/ttsService';
 import './Chat.css';
 
 const Chat = () => {
+  const navigate = useNavigate();
   const [messages, setMessages] = useState([]);
   const [audioUrl, setAudioUrl] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -214,7 +216,13 @@ const Chat = () => {
         </div>
         <div className="header-icons">
           <button className="icon-button chat-icon">💬</button>
-          <button className="icon-button settings-icon">⚙️</button>
+          <button 
+            className="icon-button profile-button"
+            onClick={() => navigate('/profile-setup')}
+            title="Set up your profile"
+          >
+            👤
+          </button>
         </div>
       </header>
 

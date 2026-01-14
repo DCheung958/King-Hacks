@@ -1,12 +1,69 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Welcome.css';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 const Welcome = () => {
   const navigate = useNavigate();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleBeginJourney = () => {
-    navigate('/voice-profile');
+  const handleSignIn = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    if (!email || !password) {
+      setError('Please enter both email and password');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          password: password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        // Check if user doesn't exist (401 could be wrong password or user not found)
+        if (response.status === 401 || response.status === 404) {
+          throw new Error(data.detail || 'Invalid email or password');
+        }
+        throw new Error(data.detail || 'Sign in failed');
+      }
+
+      // Store token and user info
+      localStorage.setItem('auth_token', data.access_token);
+      localStorage.setItem('user_id', data.user_id);
+      localStorage.setItem('user_email', data.email);
+      if (data.name) {
+        localStorage.setItem('user_name', data.name);
+      }
+
+      // Redirect to chat
+      navigate('/chat');
+    } catch (err) {
+      setError(err.message || 'An error occurred. Please try again.');
+      console.error('Sign in error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateAccount = () => {
+    navigate('/signup');
   };
 
   return (
@@ -25,35 +82,68 @@ const Welcome = () => {
           Experience personalized emotional therapy with AI that speaks in your own voice, creating a deeply personal healing journey.
         </p>
         
-        {/* Feature Cards */}
-        <div className="feature-cards">
-          <div className="feature-card">
-            <div className="feature-icon">🎤</div>
-            <h3 className="feature-title">Your Voice, Your Therapy</h3>
-            <p className="feature-description">Record your voice to create a personalized therapeutic experience</p>
+        {/* Sign In Form */}
+        <div className="signin-section">
+          <form className="signin-form" onSubmit={handleSignIn}>
+            {error && (
+              <div className="error-message">
+                {error}
+              </div>
+            )}
+            
+            <div className="form-group">
+              <label htmlFor="email" className="form-label">Email</label>
+              <input
+                type="email"
+                id="email"
+                className="form-input"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="your@email.com"
+                required
+                disabled={loading}
+              />
+            </div>
+            
+            <div className="form-group">
+              <label htmlFor="password" className="form-label">Password</label>
+              <input
+                type="password"
+                id="password"
+                className="form-input"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                required
+                disabled={loading}
+                minLength={6}
+              />
+            </div>
+            
+            <button 
+              type="submit" 
+              className="signin-button"
+              disabled={loading}
+            >
+              {loading ? 'Signing in...' : 'Sign In'}
+            </button>
+          </form>
+          
+          <div className="signup-divider">
+            <span>Don't have an account?</span>
           </div>
           
-          <div className="feature-card">
-            <div className="feature-icon">❤️</div>
-            <h3 className="feature-title">Emotional Understanding</h3>
-            <p className="feature-description">AI-powered emotion detection for truly empathetic responses</p>
-          </div>
-          
-          <div className="feature-card">
-            <div className="feature-icon">🛡️</div>
-            <h3 className="feature-title">Safe & Private</h3>
-            <p className="feature-description">Your conversations and voice data are secure and confidential</p>
-          </div>
+          <button 
+            className="create-account-button"
+            onClick={handleCreateAccount}
+            disabled={loading}
+          >
+            Create Account
+          </button>
         </div>
-        
-        {/* Begin Journey Button */}
-        <button className="begin-journey-button" onClick={handleBeginJourney}>
-          Begin Your Journey
-        </button>
       </div>
     </div>
   );
 };
 
 export default Welcome;
-

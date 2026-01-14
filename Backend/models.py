@@ -12,7 +12,9 @@ try:
         metadata,
         Column("id", UUID(as_uuid=True), primary_key=True),
         Column("email", String(255), unique=True, nullable=False, index=True),
+        Column("username", String(255), nullable=True, unique=True),
         Column("name", String(255), nullable=True),
+        Column("password_hash", String(255), nullable=True),
         Column("created_at", DateTime, default=datetime.utcnow, nullable=False),
     )
     

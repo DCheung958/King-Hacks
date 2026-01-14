@@ -25,9 +25,43 @@ async def create_user(email: str, name: Optional[str] = None) -> Dict[str, Any]:
     return {"id": str(user_id), "email": email, "name": name}
 
 
+async def create_user_with_password(
+    email: str, 
+    password_hash: str, 
+    name: Optional[str] = None,
+    username: Optional[str] = None
+) -> Dict[str, Any]:
+    """Create a new user with password"""
+    user_id = uuid4()
+    query = users.insert().values(
+        id=user_id,
+        email=email,
+        username=username,
+        name=name,
+        password_hash=password_hash,
+        created_at=datetime.utcnow()
+    )
+    await database.execute(query)
+    return {
+        "id": str(user_id), 
+        "email": email, 
+        "name": name,
+        "username": username
+    }
+
+
 async def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     """Get user by email"""
     query = users.select().where(users.c.email == email)
+    result = await database.fetch_one(query)
+    if result:
+        return dict(result)
+    return None
+
+
+async def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
+    """Get user by username"""
+    query = users.select().where(users.c.username == username)
     result = await database.fetch_one(query)
     if result:
         return dict(result)

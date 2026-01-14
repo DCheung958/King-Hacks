@@ -48,6 +48,14 @@ app = FastAPI(title="Echocare Backend API", version="1.0.0")
 if DB_AVAILABLE and api_router:
     app.include_router(api_router)
 
+# Include authentication routes if available
+try:
+    from auth_routes import router as auth_router
+    if DB_AVAILABLE:
+        app.include_router(auth_router)
+except ImportError:
+    print("Warning: auth_routes not available. Authentication endpoints will be disabled.")
+
 @app.on_event("startup")
 async def startup():
     if DB_AVAILABLE and database:
@@ -62,15 +70,15 @@ async def shutdown():
     if DB_AVAILABLE and database:
         try:
             await database.disconnect()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Warning: Error disconnecting from database: {e}")
 
-# Allow CORS for frontend (Vite dev server + production)
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",  # Vite dev server
-        "http://localhost:3000",  # Alternative dev port
+        "http://localhost:5173",
+        "http://localhost:3000",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:3000",
     ],
@@ -89,7 +97,7 @@ class EmotionRequest(BaseModel):
 
 class EmotionResponse(BaseModel):
     emotion: str
-    confidence: float = 0.0
+    confidence: float
 
 class ResponseRequest(BaseModel):
     text: str
@@ -112,6 +120,18 @@ class VoiceSampleResponse(BaseModel):
     filename: str
     file_size: int
     voice_id: Optional[str] = None  # ElevenLabs voice ID after cloning
+    total_samples: Optional[int] = None  # Total samples for this user
+    suggestion: Optional[str] = None  # Suggestion for better voice capture
+
+class BatchVoiceCloneRequest(BaseModel):
+    user_id: Optional[str] = None
+    voice_name: Optional[str] = None
+
+class BatchVoiceCloneResponse(BaseModel):
+    message: str
+    voice_id: Optional[str] = None
+    filenames: List[str]
+    total_samples: int
 
 # Mock therapeutic responses
 THERAPEUTIC_RESPONSES = [
@@ -130,35 +150,6 @@ try:
     HF_MODEL_AVAILABLE = EMOTION_MODEL_AVAILABLE
 except ImportError:
     HF_MODEL_AVAILABLE = False
-    print("Warning: emotion_model not available. Using mock emotion detection.")
-
-# Try to import response generation model
-try:
-    from response_model import generate_therapeutic_response, RESPONSE_MODEL_AVAILABLE
-    AI_RESPONSE_AVAILABLE = RESPONSE_MODEL_AVAILABLE
-except ImportError:
-    AI_RESPONSE_AVAILABLE = False
-    print("Warning: response_model not available. Using mock response generation.")
-
-# Mock emotion detection (fallback if Hugging Face model not available)
-def mock_detect_emotion(text: str) -> tuple[str, float]:
-    """
-    Mock emotion detection - fallback when Hugging Face model is not available.
-    Returns (emotion, confidence)
-    """
-    text_lower = text.lower()
-    
-    # Simple keyword-based detection
-    if any(word in text_lower for word in ["sad", "unhappy", "depressed", "down", "upset"]):
-        return ("sadness", 0.75)
-    elif any(word in text_lower for word in ["anxious", "worried", "nervous", "stress", "afraid"]):
-        return ("anxiety", 0.75)
-    elif any(word in text_lower for word in ["angry", "mad", "frustrated", "annoyed", "irritated"]):
-        return ("anger", 0.75)
-    elif any(word in text_lower for word in ["happy", "joy", "excited", "great", "wonderful"]):
-        return ("joy", 0.75)
-    else:
-        return ("calm", 0.65)
 
 @app.get("/")
 def root():
@@ -170,6 +161,7 @@ def root():
             "emotion": "/api/emotion",
             "respond": "/api/respond",
             "voice-sample": "/api/voice-sample",
+            "voice-clone-batch": "/api/voice-clone-batch",
             "synthesize": "/api/synthesize"
         }
     }
@@ -203,6 +195,26 @@ async def detect_emotion_endpoint(req: EmotionRequest):
         confidence=confidence
     )
 
+def mock_detect_emotion(text: str) -> tuple[str, float]:
+    """
+    Mock emotion detection (fallback when model is not available)
+    """
+    text_lower = text.lower()
+    
+    # Simple keyword-based emotion detection
+    if any(word in text_lower for word in ['anxious', 'anxiety', 'worried', 'worry', 'stress', 'stressed', 'nervous']):
+        return ("anxiety", 0.75)
+    elif any(word in text_lower for word in ['sad', 'depressed', 'depression', 'down', 'unhappy', 'hopeless']):
+        return ("sadness", 0.70)
+    elif any(word in text_lower for word in ['angry', 'anger', 'mad', 'furious', 'irritated', 'frustrated']):
+        return ("anger", 0.72)
+    elif any(word in text_lower for word in ['happy', 'joy', 'excited', 'great', 'wonderful', 'awesome', 'good']):
+        return ("joy", 0.68)
+    elif any(word in text_lower for word in ['afraid', 'fear', 'scared', 'frightened', 'terrified']):
+        return ("fear", 0.73)
+    else:
+        return ("calm", 0.65)
+
 @app.post("/api/respond", response_model=ResponseResponse)
 async def generate_response(
     req: ResponseRequest,
@@ -210,21 +222,14 @@ async def generate_response(
     conversation_id: Optional[str] = None
 ):
     """
-    Generate empathetic therapeutic response using AI model (with fallback to mock)
-    Optionally saves to database if user_id and conversation_id provided
+    Generate empathetic therapeutic response (uses AI model if available, otherwise mock)
     """
-    from db_operations import (
-        create_conversation,
-        get_conversation_by_id,
-        create_message,
-    )
-    from uuid import UUID
-    
     if not req.text or not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
     # Detect emotion if not provided
-    if not req.emotion:
+    emotion = req.emotion
+    if not emotion:
         try:
             if HF_MODEL_AVAILABLE:
                 from emotion_model import detect_emotion
@@ -232,16 +237,28 @@ async def generate_response(
             else:
                 emotion, _ = mock_detect_emotion(req.text.strip())
         except Exception as e:
-            print(f"Warning: Emotion detection failed: {e}. Using mock detection.")
-            emotion, _ = mock_detect_emotion(req.text.strip())
-    else:
-        emotion = req.emotion
+            print(f"Warning: Emotion detection failed: {e}. Using default emotion.")
+            emotion = "calm"
+    
+    # Get user style context if user_id provided
+    user_style = None
+    recent_messages = None
+    if user_id:
+        try:
+            from user_style_analyzer import get_user_speech_style, get_recent_user_messages
+            user_uuid = uuid.UUID(user_id)
+            conv_uuid = uuid.UUID(conversation_id) if conversation_id else None
+            user_style = await get_user_speech_style(user_uuid, limit_messages=30)
+            recent_messages = await get_recent_user_messages(user_uuid, conv_uuid, limit=3)
+        except Exception as e:
+            # Don't fail if style analysis fails
+            print(f"Warning: Failed to get user style context: {e}")
     
     # Generate response using AI model if available, otherwise use mock
     try:
         if AI_RESPONSE_AVAILABLE:
             from response_model import generate_therapeutic_response
-            response_text = generate_therapeutic_response(req.text.strip(), emotion)
+            response_text = generate_therapeutic_response(req.text.strip(), emotion, user_style, recent_messages)
         else:
             # Fallback to mock responses
             response_index = len(req.text) % len(THERAPEUTIC_RESPONSES)
@@ -252,51 +269,16 @@ async def generate_response(
         response_index = len(req.text) % len(THERAPEUTIC_RESPONSES)
         response_text = THERAPEUTIC_RESPONSES[response_index]
     
-    # Save to database if user_id provided
-    if user_id:
-        try:
-            user_uuid = UUID(user_id)
-            conv_uuid = None
-            
-            # Get or create conversation
-            if conversation_id:
-                try:
-                    conv_uuid = UUID(conversation_id)
-                    # Verify conversation exists
-                    conv = await get_conversation_by_id(conv_uuid)
-                    if not conv:
-                        raise HTTPException(status_code=404, detail="Conversation not found")
-                except ValueError:
-                    raise HTTPException(status_code=400, detail="Invalid conversation_id format")
-            else:
-                # Create new conversation
-                conv = await create_conversation(user_uuid)
-                conv_uuid = UUID(conv["id"])
-            
-            # Save user message
-            await create_message(
-                conversation_id=conv_uuid,
-                role="user",
-                text=req.text,
-                emotion=emotion
-            )
-            
-            # Save assistant response
-            await create_message(
-                conversation_id=conv_uuid,
-                role="assistant",
-                text=response_text
-            )
-        except HTTPException:
-            raise
-        except Exception as e:
-            # Don't fail the request if DB save fails, just log it
-            print(f"Warning: Failed to save to database: {e}")
-    
     return ResponseResponse(
         response_text=response_text,
         emotion=emotion
     )
+
+# Try to import AI response model
+try:
+    from response_model import AI_RESPONSE_AVAILABLE
+except ImportError:
+    AI_RESPONSE_AVAILABLE = False
 
 @app.post("/api/voice-sample", response_model=VoiceSampleResponse)
 async def upload_voice_sample(
@@ -304,11 +286,13 @@ async def upload_voice_sample(
     user_id: Optional[str] = Form(None)
 ):
     """
-    Accept uploaded voice sample for voice cloning (MOCKED - will process with ElevenLabs later)
-    Supported formats: webm, mp3, wav, ogg
+    Accept uploaded voice sample (stores locally, no cloning)
+    Cloning is done separately via /api/voice-clone-batch endpoint
+    Supports multiple samples to better capture voice style
+    Supported formats: webm, mp3, wav, ogg, m4a
     Optional: user_id to associate with a user
     """
-    from db_operations import create_voice_sample
+    from db_operations import create_voice_sample, get_voice_samples_by_user
     
     # Validate file type
     allowed_extensions = {".webm", ".mp3", ".wav", ".ogg", ".m4a"}
@@ -339,22 +323,9 @@ async def upload_voice_sample(
         
         file_size = filepath.stat().st_size
         
-        # Clone voice with ElevenLabs if available
-        voice_id = None
-        if ELEVENLABS_AVAILABLE and elevenlabs:
-            try:
-                from elevenlabs import Voice, VoiceSettings
-                voice = elevenlabs.voices.add(
-                    name=f"Echocare Voice {uuid.uuid4()}",
-                    files=[str(filepath)]
-                )
-                voice_id = voice.voice_id
-                print(f"Voice cloned successfully. Voice ID: {voice_id}")
-            except Exception as e:
-                print(f"Warning: Failed to clone voice with ElevenLabs: {e}")
-                # Continue without voice_id - file is still saved
-        
         # Store record in database if available
+        total_samples = 1
+        suggestion = None
         if DB_AVAILABLE:
             try:
                 user_uuid = None
@@ -365,21 +336,196 @@ async def upload_voice_sample(
                         raise HTTPException(status_code=400, detail="Invalid user_id format")
                 
                 await create_voice_sample(filename=filename, user_id=user_uuid)
+                
+                # Get total samples count for user feedback
+                if user_uuid:
+                    try:
+                        from db_operations import get_voice_samples_by_user
+                        samples = await get_voice_samples_by_user(user_uuid)
+                        total_samples = len(samples)
+                        
+                        # Provide suggestions based on sample count
+                        if total_samples == 1:
+                            suggestion = "Great start! Upload 2-3 more varied samples (different emotions, topics) for better voice capture."
+                        elif total_samples == 2:
+                            suggestion = "Good progress! One more sample with varied tone would help capture your full voice style."
+                        elif total_samples < 5:
+                            suggestion = f"Excellent! You have {total_samples} samples. Add a few more with different emotions for best results."
+                        else:
+                            suggestion = "Perfect! You have enough samples for great voice emulation."
+                    except Exception as e:
+                        print(f"Warning: Failed to get sample count: {e}")
             except Exception as e:
                 print(f"Warning: Failed to save to database: {e}")
         
-        response_message = "Voice sample uploaded and cloned" if voice_id else "Voice sample uploaded successfully"
+        response_message = "Voice sample uploaded successfully"
+        if total_samples > 1:
+            response_message += f" ({total_samples} total samples)"
         
         return VoiceSampleResponse(
             message=response_message,
             filename=filename,
             file_size=file_size,
-            voice_id=voice_id
+            voice_id=None,  # No cloning on individual upload
+            total_samples=total_samples,
+            suggestion=suggestion
         )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving file: {str(e)}")
+
+@app.post("/api/voice-clone-batch", response_model=BatchVoiceCloneResponse)
+async def batch_clone_voice(
+    files: List[UploadFile] = File(...),
+    user_id: Optional[str] = Form(None),
+    voice_name: Optional[str] = Form(None)
+):
+    """
+    Batch upload and clone voice samples with ElevenLabs (saves credits by cloning once)
+    Accepts multiple files and clones them together into a single voice
+    Supported formats: webm, mp3, wav, ogg, m4a
+    """
+    from db_operations import create_voice_sample, get_voice_samples_by_user
+    
+    if not files or len(files) == 0:
+        raise HTTPException(status_code=400, detail="At least one file is required")
+    
+    if len(files) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 files allowed per batch")
+    
+    # Validate file types and save files
+    allowed_extensions = {".webm", ".mp3", ".wav", ".ogg", ".m4a"}
+    saved_files = []
+    saved_filenames = []
+    
+    try:
+        user_uuid = None
+        if user_id:
+            try:
+                user_uuid = uuid.UUID(user_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid user_id format")
+        
+        # Save all files first
+        for file in files:
+            if not file.filename:
+                raise HTTPException(status_code=400, detail="All files must have filenames")
+            
+            file_extension = Path(file.filename).suffix.lower()
+            if file_extension not in allowed_extensions:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported file type: {file_extension}. Allowed: {', '.join(allowed_extensions)}"
+                )
+            
+            filename = f"{uuid.uuid4()}{file_extension}"
+            filepath = UPLOAD_DIR / filename
+            
+            with open(filepath, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            
+            saved_files.append(filepath)
+            saved_filenames.append(filename)
+            
+            # Store record in database if available
+            if DB_AVAILABLE:
+                try:
+                    await create_voice_sample(filename=filename, user_id=user_uuid)
+                except Exception as e:
+                    print(f"Warning: Failed to save sample to database: {e}")
+        
+        # Clone voice with ElevenLabs if available (single clone operation with all files)
+        voice_id = None
+        if ELEVENLABS_AVAILABLE and elevenlabs:
+            try:
+                # Use the correct ElevenLabs API method for voice cloning
+                # The correct method is voices.clone() with files parameter
+                voice_name_final = voice_name or f"Echocare Voice {uuid.uuid4()}"
+                
+                # Convert file paths to file objects for ElevenLabs API
+                file_objects = []
+                for filepath in saved_files:
+                    with open(filepath, 'rb') as f:
+                        file_objects.append(f.read())
+                
+                # Clone voice using ElevenLabs API (Instant Voice Cloning)
+                # The correct method is voices.ivc.create() for Instant Voice Cloning
+                try:
+                    from io import BytesIO
+                    # Convert bytes to BytesIO objects for ElevenLabs API
+                    file_io_objects = [BytesIO(f) for f in file_objects]
+                    
+                    # Use Instant Voice Cloning (IVC) API
+                    voice = elevenlabs.voices.ivc.create(
+                        name=voice_name_final,
+                        files=file_io_objects
+                    )
+                    voice_id = voice.voice_id if hasattr(voice, 'voice_id') else str(voice)
+                except AttributeError:
+                    # Fallback: Try alternative API methods if IVC doesn't exist
+                    try:
+                        # Try voices.clone() as fallback
+                        voice = elevenlabs.voices.clone(
+                            name=voice_name_final,
+                            files=file_objects
+                        )
+                        voice_id = voice.voice_id if hasattr(voice, 'voice_id') else str(voice)
+                    except (AttributeError, TypeError) as e:
+                        print(f"Warning: ElevenLabs voice cloning API method not found: {e}")
+                        print(f"Note: Please check ElevenLabs SDK documentation for correct cloning method")
+                        voice_id = None
+                except Exception as e:
+                    print(f"Warning: ElevenLabs voice cloning failed: {e}")
+                    print(f"Error details: {type(e).__name__}: {str(e)}")
+                    voice_id = None
+                
+                if voice_id:
+                    print(f"Voice cloned successfully with {len(saved_files)} samples. Voice ID: {voice_id}")
+            except Exception as e:
+                print(f"Warning: Failed to clone voice with ElevenLabs: {e}")
+                print(f"Error details: {type(e).__name__}: {str(e)}")
+                # Continue without voice_id - files are still saved
+        
+        # Get total samples count for user feedback
+        total_samples = len(saved_filenames)
+        if DB_AVAILABLE and user_uuid:
+            try:
+                from db_operations import get_voice_samples_by_user
+                samples = await get_voice_samples_by_user(user_uuid)
+                total_samples = len(samples)
+            except Exception as e:
+                print(f"Warning: Failed to get sample count: {e}")
+        
+        message = f"Successfully uploaded {len(saved_filenames)} voice sample(s)"
+        if voice_id:
+            message += f" and cloned voice (ID: {voice_id})"
+        
+        return BatchVoiceCloneResponse(
+            message=message,
+            voice_id=voice_id,
+            filenames=saved_filenames,
+            total_samples=total_samples
+        )
+    
+    except HTTPException:
+        # Clean up saved files on error
+        for filepath in saved_files:
+            try:
+                if filepath.exists():
+                    filepath.unlink()
+            except Exception:
+                pass
+        raise
+    except Exception as e:
+        # Clean up saved files on error
+        for filepath in saved_files:
+            try:
+                if filepath.exists():
+                    filepath.unlink()
+            except Exception:
+                pass
+        raise HTTPException(status_code=500, detail=f"Error processing batch upload: {str(e)}")
 
 @app.post("/api/synthesize", response_model=SynthesizeResponse)
 async def synthesize_speech(req: SynthesizeRequest):
@@ -462,14 +608,20 @@ async def get_audio(filename: str):
     
     # Determine media type based on file extension
     media_type = "audio/mpeg"  # Default to mp3
-    if filename.endswith(".wav"):
+    if filename.endswith(".webm"):
+        media_type = "audio/webm"
+    elif filename.endswith(".wav"):
         media_type = "audio/wav"
     elif filename.endswith(".ogg"):
         media_type = "audio/ogg"
-    elif filename.endswith(".webm"):
-        media_type = "audio/webm"
+    elif filename.endswith(".m4a"):
+        media_type = "audio/mp4"
     
-    return FileResponse(file_path, media_type=media_type)
+    return FileResponse(
+        path=file_path,
+        media_type=media_type,
+        filename=filename
+    )
 
 if __name__ == "__main__":
     import uvicorn
