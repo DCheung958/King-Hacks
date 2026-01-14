@@ -61,8 +61,14 @@ async def startup():
     if DB_AVAILABLE and database:
         try:
             await database.connect()
+            # Update connection status in database module
+            import database as db_module
+            db_module.DATABASE_CONNECTED = True
             print("[Startup] ✓ Successfully connected to database")
         except Exception as e:
+            # Update connection status in database module
+            import database as db_module
+            db_module.DATABASE_CONNECTED = False
             print(f"[Startup] ❌ ERROR: Could not connect to database")
             print(f"[Startup]   Error: {e}")
             print(f"[Startup]   Check:")

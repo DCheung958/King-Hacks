@@ -21,9 +21,18 @@ def is_database_connected():
     if not DB_AVAILABLE or database is None:
         return False
     try:
-        # Check if database has a connection pool (means it's connected)
-        return hasattr(database, '_database') and database._database._pool is not None
-    except (AttributeError, AssertionError):
+        # Check connection status from database module
+        from database import DATABASE_CONNECTED
+        return DATABASE_CONNECTED
+    except (AttributeError, ImportError):
+        # Fallback: Check if database has a connection pool
+        try:
+            if hasattr(database, '_database'):
+                pool = getattr(database._database, '_pool', None)
+                if pool is not None:
+                    return True
+        except (AttributeError, AssertionError):
+            pass
         return False
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])

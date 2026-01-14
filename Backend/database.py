@@ -61,8 +61,11 @@ try:
     
     database = Database(DATABASE_URL)
     metadata = sqlalchemy.MetaData()
+    # Track connection status
+    DATABASE_CONNECTED = False
 except ImportError:
     # Database packages not installed - running in mock mode
     database = None
     metadata = None
     DATABASE_URL = None
+    DATABASE_CONNECTED = False
