@@ -61,9 +61,15 @@ async def startup():
     if DB_AVAILABLE and database:
         try:
             await database.connect()
+            print("[Startup] ✓ Successfully connected to database")
         except Exception as e:
-            print(f"Warning: Could not connect to database: {e}")
-            print("Running in mock mode without database.")
+            print(f"[Startup] ❌ ERROR: Could not connect to database")
+            print(f"[Startup]   Error: {e}")
+            print(f"[Startup]   Check:")
+            print(f"[Startup]   1. PostgreSQL is running")
+            print(f"[Startup]   2. .env file exists in Backend folder")
+            print(f"[Startup]   3. Password in .env matches PostgreSQL password")
+            print(f"[Startup]   Running in mock mode without database.")
 
 @app.on_event("shutdown")
 async def shutdown():
