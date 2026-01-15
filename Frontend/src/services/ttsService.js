@@ -10,12 +10,13 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const SILENT_AUDIO_DATA_URI = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
 
 /**
- * Synthesize speech from text
+ * Synthesize speech from text with prosody-aware settings
  * @param {string} text - Text to synthesize
- * @param {string} [voiceId] - Optional voice ID for ElevenLabs (future use)
+ * @param {string} [voiceId] - Optional voice ID for ElevenLabs
+ * @param {string} [emotion] - Emotion for prosody adjustment (sadness, fear, anger, joy, etc.)
  * @returns {Promise<{audioUrl: string, duration?: number}>}
  */
-export async function synthesizeSpeech(text, voiceId = null) {
+export async function synthesizeSpeech(text, voiceId = null, emotion = null) {
   try {
     const response = await fetch(`${API_BASE_URL}/api/synthesize`, {
       method: 'POST',
@@ -24,7 +25,8 @@ export async function synthesizeSpeech(text, voiceId = null) {
       },
       body: JSON.stringify({ 
         text,
-        voice_id: voiceId 
+        voice_id: voiceId,
+        emotion: emotion  // Pass emotion for prosody-aware synthesis
       }),
     });
 

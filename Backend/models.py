@@ -15,7 +15,10 @@ try:
         Column("username", String(255), nullable=True, unique=True),
         Column("name", String(255), nullable=True),
         Column("password_hash", String(255), nullable=True),
+        Column("voice_id", String(255), nullable=True),
+        Column("voice_name", String(255), nullable=True),
         Column("created_at", DateTime, default=datetime.utcnow, nullable=False),
+        Index("idx_users_voice_id", "voice_id"),
     )
     
     voice_samples = Table(

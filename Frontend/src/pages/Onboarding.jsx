@@ -1,12 +1,28 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Onboarding.css';
 
 const Onboarding = () => {
   const navigate = useNavigate();
 
+  // Check if user already has a voice profile when component mounts
+  useEffect(() => {
+    const voiceId = localStorage.getItem('voice_id');
+    // If user already has a voice profile, skip to chat
+    if (voiceId) {
+      navigate('/chat');
+    }
+  }, [navigate]);
+
   const handleBeginJourney = () => {
-    navigate('/chat');
+    // Check if user has voice profile before navigating
+    const voiceId = localStorage.getItem('voice_id');
+    if (voiceId) {
+      navigate('/chat');
+    } else {
+      // Navigate to voice profile setup if no voice profile exists
+      navigate('/voice-profile');
+    }
   };
 
   return (
