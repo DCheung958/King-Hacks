@@ -151,6 +151,10 @@
 
 /* Responsive Design */
 @media (max-width: 768px) {
+  .onboarding-page {
+    padding: 1.5rem;
+  }
+
   .onboarding-title {
     font-size: 2.2rem;
   }
@@ -163,21 +167,70 @@
   .feature-cards {
     flex-direction: column;
     align-items: center;
+    gap: 1.25rem;
   }
 
   .feature-card {
     max-width: 100%;
     width: 100%;
+    padding: 1.5rem;
   }
 
   .logo-circle {
     width: 100px;
     height: 100px;
+    margin-bottom: 1.5rem;
   }
 
   .begin-journey-button {
     width: 100%;
     max-width: 300px;
+    min-height: 48px;
+  }
+}
+
+/* Mobile-specific optimizations (max-width: 600px) */
+@media (max-width: 600px) {
+  .onboarding-page {
+    padding: 1rem;
+  }
+
+  .onboarding-title {
+    font-size: 1.8rem;
+  }
+
+  .onboarding-description {
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .feature-cards {
+    gap: 1rem;
+  }
+
+  .feature-card {
+    padding: 1.25rem;
+  }
+
+  .logo-circle {
+    width: 80px;
+    height: 80px;
+  }
+
+  .begin-journey-button {
+    padding: 0.875rem 1.25rem;
+    font-size: 0.95rem;
+  }
+}
+
+/* Very small screens (max-width: 400px) */
+@media (max-width: 400px) {
+  .onboarding-title {
+    font-size: 1.5rem;
+  }
+
+  .feature-card {
+    padding: 1rem;
   }
 }
 

@@ -4,6 +4,7 @@ import SignUp from './pages/SignUp';
 import Onboarding from './pages/Onboarding';
 import ProfileSetup from './pages/ProfileSetup';
 import VoiceProfile from './pages/VoiceProfile';
+import VoiceProfileSelection from './pages/VoiceProfileSelection';
 import Chat from './pages/Chat';
 import './App.css'
 
@@ -15,6 +16,7 @@ function App() {
         <Route path="/signup" element={<SignUp />} />
         <Route path="/onboarding" element={<Onboarding />} />
         <Route path="/profile-setup" element={<ProfileSetup />} />
+        <Route path="/voice-profile-selection" element={<VoiceProfileSelection />} />
         <Route path="/voice-profile" element={<VoiceProfile />} />
         <Route path="/chat" element={<Chat />} />
         <Route path="*" element={<Navigate to="/" replace />} />

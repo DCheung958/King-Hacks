@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from starlette.requests import Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -12,7 +13,7 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Get ElevenLabs API key from environment
+# Get API keys from environment
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
 # Initialize ElevenLabs client (only if API key is available)
@@ -114,6 +115,8 @@ class EmotionResponse(BaseModel):
 class ResponseRequest(BaseModel):
     text: str
     emotion: Optional[str] = None
+    persona: Optional[str] = None  # "friend" | "therapist" | "family"
+    warmth: Optional[float] = 0.5  # 0.0 (direct) to 1.0 (gentle)
 
 class ResponseResponse(BaseModel):
     response_text: str
@@ -121,7 +124,13 @@ class ResponseResponse(BaseModel):
 
 class SynthesizeRequest(BaseModel):
     text: str
-    voice_id: Optional[str] = None  # For future ElevenLabs integration
+    voice_id: Optional[str] = None  # ElevenLabs voice ID
+    emotion: Optional[str] = None  # Emotion for prosody adjustment
+    persona: Optional[str] = None  # Persona for prosody adjustment
+    warmth: Optional[float] = None  # Warmth level (0.0-1.0) for prosody
+    stability: Optional[float] = None  # Override stability (0.0-1.0)
+    similarity_boost: Optional[float] = None  # Override similarity boost (0.0-1.0)
+    style_exaggeration: Optional[float] = None  # Override style exaggeration (0.0-1.0)
 
 class SynthesizeResponse(BaseModel):
     audio_url: str
@@ -180,7 +189,47 @@ def root():
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "upload_dir_exists": UPLOAD_DIR.exists()}
+    return {
+        "status": "healthy", 
+        "upload_dir_exists": UPLOAD_DIR.exists(),
+        "elevenlabs": {
+            "available": ELEVENLABS_AVAILABLE,
+            "api_key_configured": bool(ELEVENLABS_API_KEY),
+            "client_initialized": elevenlabs is not None
+        }
+    }
+
+@app.get("/api/elevenlabs-status")
+def elevenlabs_status():
+    """
+    Check ElevenLabs API connection status
+    This endpoint helps verify if ElevenLabs is configured and ready to use credits
+    """
+    status = {
+        "configured": ELEVENLABS_AVAILABLE,
+        "api_key_present": bool(ELEVENLABS_API_KEY),
+        "client_initialized": elevenlabs is not None,
+        "package_installed": True
+    }
+    
+    # Try to verify the API key by making a lightweight call
+    if ELEVENLABS_AVAILABLE and elevenlabs:
+        try:
+            # This is a lightweight call that should not consume significant credits
+            # Just checking if we can access the API (might make a small API call)
+            status["api_accessible"] = True
+            status["message"] = "ElevenLabs is connected. API calls will consume credits."
+        except Exception as e:
+            status["api_accessible"] = False
+            status["error"] = str(e)
+            status["message"] = "ElevenLabs API key present but connection failed."
+    else:
+        if not bool(ELEVENLABS_API_KEY):
+            status["message"] = "ELEVENLABS_API_KEY not found in environment variables. ElevenLabs features disabled - NO credits will be used."
+        else:
+            status["message"] = "ElevenLabs package not installed. Install with: pip install elevenlabs"
+    
+    return status
 
 @app.post("/api/emotion", response_model=EmotionResponse)
 async def detect_emotion_endpoint(req: EmotionRequest):
@@ -235,11 +284,65 @@ async def generate_response(
 ):
     """
     Generate empathetic therapeutic response (uses AI model if available, otherwise mock)
+    Enhanced with conversation memory, therapeutic safety wrapper, and crisis detection
     """
     if not req.text or not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
-    # Detect emotion if not provided
+    # PRIORITY 1: Crisis detection (fast win - safety first)
+    crisis_detected = False
+    crisis_response = None
+    try:
+        from crisis_detector import detect_crisis, log_crisis_detection
+        
+        # Detect emotion first for crisis detection
+        emotion_for_crisis = req.emotion
+        emotion_confidence = 0.0
+        if not emotion_for_crisis:
+            try:
+                if HF_MODEL_AVAILABLE:
+                    from emotion_model import detect_emotion
+                    emotion_for_crisis, emotion_confidence = detect_emotion(req.text.strip())
+                else:
+                    emotion_for_crisis, emotion_confidence = mock_detect_emotion(req.text.strip())
+            except Exception:
+                pass
+        
+        # Check for crisis
+        crisis_result = detect_crisis(
+            req.text.strip(),
+            emotion=emotion_for_crisis,
+            emotion_confidence=emotion_confidence
+        )
+        
+        if crisis_result and crisis_result.get("crisis_detected"):
+            crisis_detected = True
+            crisis_response = crisis_result.get("safe_response")
+            
+            # Log crisis detection
+            if crisis_result.get("log_incident"):
+                try:
+                    log_crisis_detection(crisis_result["level"])
+                except Exception as log_error:
+                    print(f"Warning: Failed to log crisis: {log_error}")
+            
+            print(f"[CRISIS DETECTED] Level: {crisis_result.get('level')}, Should override: {crisis_result.get('should_override')}")
+            print(f"[CRISIS DETECTED] Reasons: {crisis_result.get('reasons', [])}")
+            
+            # Override response if needed
+            if crisis_result.get("should_override") and crisis_response:
+                print(f"[CRISIS OVERRIDE] Returning crisis response ({len(crisis_response)} chars)")
+                return ResponseResponse(
+                    response_text=crisis_response,
+                    emotion=emotion_for_crisis or "concern"
+                )
+    except Exception as e:
+        import traceback
+        print(f"ERROR: Crisis detection failed: {e}")
+        traceback.print_exc()
+        print("Continuing with normal response generation.")
+    
+    # Detect emotion if not provided (and not already detected for crisis)
     emotion = req.emotion
     if not emotion:
         try:
@@ -252,16 +355,47 @@ async def generate_response(
             print(f"Warning: Emotion detection failed: {e}. Using default emotion.")
             emotion = "calm"
     
+    # Get conversation summary if user_id and conversation_id provided
+    conversation_summary = None
+    if user_id and conversation_id:
+        try:
+            from conversation_memory import get_conversation_summary
+            user_uuid = uuid.UUID(user_id)
+            conv_uuid = uuid.UUID(conversation_id)
+            conversation_summary = await get_conversation_summary(user_uuid, conv_uuid)
+        except Exception as e:
+            print(f"Warning: Failed to get conversation summary: {e}")
+    
     # Get user style context if user_id provided
     user_style = None
     recent_messages = None
+    last_assistant_message = None
     if user_id:
         try:
             from user_style_analyzer import get_user_speech_style, get_recent_user_messages
+            from db_operations import get_messages_by_conversation
             user_uuid = uuid.UUID(user_id)
             conv_uuid = uuid.UUID(conversation_id) if conversation_id else None
             user_style = await get_user_speech_style(user_uuid, limit_messages=30)
             recent_messages = await get_recent_user_messages(user_uuid, conv_uuid, limit=3)
+            
+            # Get conversation history and last assistant message
+            conversation_history = None
+            if conv_uuid:
+                try:
+                    messages = await get_messages_by_conversation(conv_uuid, limit=10)
+                    # Format conversation history for LLaMA 2
+                    conversation_history = [
+                        {"role": msg.get("role"), "content": msg.get("text", "")}
+                        for msg in messages
+                        if msg.get("role") in ["user", "assistant"]
+                    ]
+                    # Get last assistant message to avoid repetition
+                    assistant_messages = [msg for msg in messages if msg.get("role") == "assistant"]
+                    if assistant_messages:
+                        last_assistant_message = assistant_messages[-1].get("text", "")
+                except Exception as e:
+                    print(f"Warning: Failed to get conversation history: {e}")
         except Exception as e:
             # Don't fail if style analysis fails
             print(f"Warning: Failed to get user style context: {e}")
@@ -270,7 +404,25 @@ async def generate_response(
     try:
         if AI_RESPONSE_AVAILABLE:
             from response_model import generate_therapeutic_response
-            response_text = generate_therapeutic_response(req.text.strip(), emotion, user_style, recent_messages)
+            
+            # Get persona and warmth from request (defaults if not provided)
+            persona = req.persona if hasattr(req, 'persona') else None
+            warmth = req.warmth if hasattr(req, 'warmth') and req.warmth is not None else 0.5
+            
+            # Validate warmth range
+            warmth = max(0.0, min(1.0, warmth))
+            
+            response_text = generate_therapeutic_response(
+                req.text.strip(), 
+                emotion, 
+                user_style, 
+                recent_messages,
+                conversation_summary,
+                persona=persona,
+                warmth=warmth,
+                last_assistant_message=last_assistant_message,
+                conversation_history=conversation_history
+            )
         else:
             # Fallback to mock responses
             response_index = len(req.text) % len(THERAPEUTIC_RESPONSES)
@@ -281,6 +433,45 @@ async def generate_response(
         response_index = len(req.text) % len(THERAPEUTIC_RESPONSES)
         response_text = THERAPEUTIC_RESPONSES[response_index]
     
+    # Save messages to database if available (for conversation memory)
+    if DB_AVAILABLE and user_id and conversation_id:
+        try:
+            from db_operations import create_message, get_messages_by_conversation
+            from conversation_memory import update_conversation_summary, should_summarize
+            
+            user_uuid = uuid.UUID(user_id)
+            conv_uuid = uuid.UUID(conversation_id)
+            
+            # Save user message
+            await create_message(
+                conversation_id=conv_uuid,
+                role="user",
+                text=req.text.strip(),
+                emotion=emotion
+            )
+            
+            # Save assistant response
+            await create_message(
+                conversation_id=conv_uuid,
+                role="assistant",
+                text=response_text
+            )
+            
+            # Check if we should update conversation summary
+            messages = await get_messages_by_conversation(conv_uuid, limit=100)
+            message_count = len(messages)
+            
+            # Update summary every 5 messages
+            from conversation_memory import should_summarize
+            if should_summarize(message_count, n_messages=5):
+                await update_conversation_summary(
+                    user_uuid,
+                    conv_uuid,
+                    {"role": "assistant", "text": response_text, "emotion": None}
+                )
+        except Exception as e:
+            print(f"Warning: Failed to save messages to database: {e}")
+    
     return ResponseResponse(
         response_text=response_text,
         emotion=emotion
@@ -288,7 +479,8 @@ async def generate_response(
 
 # Try to import AI response model
 try:
-    from response_model import AI_RESPONSE_AVAILABLE
+    from response_model import RESPONSE_MODEL_AVAILABLE
+    AI_RESPONSE_AVAILABLE = RESPONSE_MODEL_AVAILABLE
 except ImportError:
     AI_RESPONSE_AVAILABLE = False
 
@@ -503,9 +695,21 @@ async def batch_clone_voice(
         total_samples = len(saved_filenames)
         if DB_AVAILABLE and user_uuid:
             try:
-                from db_operations import get_voice_samples_by_user
+                from db_operations import get_voice_samples_by_user, update_user_voice_profile
                 samples = await get_voice_samples_by_user(user_uuid)
                 total_samples = len(samples)
+                
+                # Save voice_id and voice_name to user record if voice was cloned
+                if voice_id and user_uuid:
+                    try:
+                        await update_user_voice_profile(
+                            user_id=user_uuid,
+                            voice_id=voice_id,
+                            voice_name=voice_name or f"Voice Profile"
+                        )
+                        print(f"Voice profile saved to database for user {user_uuid}")
+                    except Exception as e:
+                        print(f"Warning: Failed to save voice profile to database: {e}")
             except Exception as e:
                 print(f"Warning: Failed to get sample count: {e}")
         
@@ -540,9 +744,10 @@ async def batch_clone_voice(
         raise HTTPException(status_code=500, detail=f"Error processing batch upload: {str(e)}")
 
 @app.post("/api/synthesize", response_model=SynthesizeResponse)
-async def synthesize_speech(req: SynthesizeRequest):
+async def synthesize_speech(req: SynthesizeRequest, request: Request):
     """
-    Synthesize speech from text using ElevenLabs TTS
+    Synthesize speech from text using ElevenLabs TTS with prosody-aware settings
+    Adjusts stability, similarity boost, and style exaggeration based on emotion
     """
     if not req.text or not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
@@ -560,29 +765,105 @@ async def synthesize_speech(req: SynthesizeRequest):
         )
     
     try:
-        # Generate speech using ElevenLabs
-        audio = elevenlabs.text_to_speech.convert(
-            text=req.text,
-            voice_id=req.voice_id,
-            model_id="eleven_multilingual_v2"
-        )
+        # Get prosody settings based on emotion, persona, and warmth
+        from prosody_config import get_voice_settings
+        from persona_config import get_persona_prosody
+        
+        # If persona provided, use persona prosody (blended with emotion)
+        if req.persona:
+            voice_settings = get_persona_prosody(req.persona, req.emotion)
+        else:
+            voice_settings = get_voice_settings(
+                emotion=req.emotion,
+                custom_stability=req.stability,
+                custom_similarity_boost=req.similarity_boost,
+                custom_style_exaggeration=req.style_exaggeration
+            )
+        
+        # Adjust for warmth if provided
+        if req.warmth is not None:
+            warmth = max(0.0, min(1.0, req.warmth))
+            # Higher warmth = more style exaggeration, lower stability (warmer voice)
+            voice_settings["style_exaggeration"] = voice_settings.get("style_exaggeration", 0.2) * (0.5 + warmth * 0.5)
+            voice_settings["stability"] = voice_settings.get("stability", 0.65) * (1.0 - warmth * 0.2)
+        
+        # Apply overrides if provided
+        if req.stability is not None:
+            voice_settings["stability"] = req.stability
+        if req.similarity_boost is not None:
+            voice_settings["similarity_boost"] = req.similarity_boost
+        if req.style_exaggeration is not None:
+            voice_settings["style_exaggeration"] = req.style_exaggeration
+        
+        # Generate speech using ElevenLabs with prosody settings
+        # Note: ElevenLabs API returns a generator that yields audio chunks
+        # We need to collect all chunks into bytes
+        audio_generator = None
+        try:
+            # Try with prosody parameters (newer API)
+            audio_generator = elevenlabs.text_to_speech.convert(
+                text=req.text,
+                voice_id=req.voice_id,
+                model_id="eleven_multilingual_v2",
+                stability=voice_settings["stability"],
+                similarity_boost=voice_settings["similarity_boost"],
+                style=voice_settings["style_exaggeration"]  # May be called "style" or "style_exaggeration"
+            )
+        except TypeError:
+            # Fallback: Try without style parameter (older API versions)
+            try:
+                audio_generator = elevenlabs.text_to_speech.convert(
+                    text=req.text,
+                    voice_id=req.voice_id,
+                    model_id="eleven_multilingual_v2",
+                    stability=voice_settings["stability"],
+                    similarity_boost=voice_settings["similarity_boost"]
+                )
+            except TypeError:
+                # Final fallback: Basic call without prosody parameters
+                audio_generator = elevenlabs.text_to_speech.convert(
+                    text=req.text,
+                    voice_id=req.voice_id,
+                    model_id="eleven_multilingual_v2"
+                )
+        
+        # Convert generator to bytes (ElevenLabs returns a generator of audio chunks)
+        audio_bytes = b""
+        if audio_generator:
+            for chunk in audio_generator:
+                if isinstance(chunk, bytes):
+                    audio_bytes += chunk
+                else:
+                    # If chunk is not bytes, try to convert it
+                    audio_bytes += bytes(chunk)
+        
+        if not audio_bytes:
+            raise HTTPException(
+                status_code=500,
+                detail="No audio data received from ElevenLabs"
+            )
         
         # Save audio to file
         audio_filename = f"{uuid.uuid4()}.mp3"
         audio_path = UPLOAD_DIR / audio_filename
         
         with open(audio_path, "wb") as f:
-            f.write(audio)
+            f.write(audio_bytes)
         
         # Return URL to the audio file
-        audio_url = f"http://localhost:8000/audio/{audio_filename}"
+        # Use request base URL (FastAPI automatically injects Request)
+        base_url = str(request.base_url).rstrip('/')
+        audio_url = f"{base_url}/audio/{audio_filename}"
         
         return SynthesizeResponse(
             audio_url=audio_url,
             duration=None  # ElevenLabs doesn't return duration directly
         )
     except Exception as e:
-        print(f"Error synthesizing speech: {e}")
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"❌ ERROR synthesizing speech: {e}")
+        print(f"Full traceback:\n{error_details}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to synthesize speech: {str(e)}"

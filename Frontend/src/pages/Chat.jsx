@@ -1,11 +1,13 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { detectEmotion, generateResponse } from '../services/chatService';
 import { synthesizeSpeech } from '../services/ttsService';
+import VoiceProfileSelection from './VoiceProfileSelection';
 import './Chat.css';
 
 const Chat = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [messages, setMessages] = useState([]);
   const [audioUrl, setAudioUrl] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -14,6 +16,11 @@ const Chat = () => {
   const [interimTranscript, setInterimTranscript] = useState('');
   const [detectedMood, setDetectedMood] = useState('Neutral');
   const [isMuted, setIsMuted] = useState(false);
+  const [hasVoiceCloned, setHasVoiceCloned] = useState(false);
+  const [voiceName, setVoiceName] = useState(null);
+  const [audioError, setAudioError] = useState(null);
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [showVoiceProfileModal, setShowVoiceProfileModal] = useState(false);
   
   const recognitionRef = useRef(null);
   const streamRef = useRef(null);
@@ -21,6 +28,83 @@ const Chat = () => {
   const analyserRef = useRef(null);
   const animationFrameRef = useRef(null);
   const audioRef = useRef(null);
+
+  // Check if user has cloned their voice and get voice name
+  useEffect(() => {
+    const voiceId = localStorage.getItem('voice_id');
+    const storedVoiceName = localStorage.getItem('voice_name');
+    setHasVoiceCloned(!!voiceId);
+    setVoiceName(storedVoiceName);
+  }, [showVoiceProfileModal]); // Refresh when modal closes
+
+  // Reset modal state when returning to chat page
+  useEffect(() => {
+    // If we're on the chat page and coming from voice profile, close modal
+    if (location.pathname === '/chat') {
+      // Check if we're returning from voice profile (no state means we navigated back)
+      if (location.state === null || location.state === undefined) {
+        setShowVoiceProfileModal(false);
+      }
+    }
+  }, [location]);
+
+  // Handle audio playback when audioUrl changes
+  useEffect(() => {
+    if (audioUrl && audioRef.current) {
+      console.log('Audio URL set, attempting to play:', audioUrl);
+      setAudioError(null);
+      
+      const playAudio = async () => {
+        try {
+          // Reset audio element
+          audioRef.current.load();
+          
+          // Wait for audio to be ready
+          const handleCanPlay = async () => {
+            try {
+              if (!isMuted && audioRef.current) {
+                await audioRef.current.play();
+                console.log('Audio playing successfully');
+                setAudioError(null);
+              } else {
+                console.log('Audio muted, not playing');
+              }
+            } catch (playError) {
+              console.error('Error playing audio:', playError);
+              setAudioError('Could not play audio automatically. Click the play button below.');
+              // Some browsers require user interaction
+              if (playError.name === 'NotAllowedError') {
+                console.warn('Autoplay blocked. User interaction required.');
+              }
+            }
+            // Remove listener after first play attempt
+            audioRef.current.removeEventListener('canplay', handleCanPlay);
+          };
+          
+          audioRef.current.addEventListener('canplay', handleCanPlay);
+          
+          // Also try immediate play (in case it's already loaded)
+          if (audioRef.current.readyState >= 2) {
+            handleCanPlay();
+          }
+        } catch (error) {
+          console.error('Error loading audio:', error);
+          setAudioError('Failed to load audio file.');
+        }
+      };
+      
+      playAudio();
+    }
+  }, [audioUrl, isMuted]);
+
+  const playAudioManually = () => {
+    if (audioRef.current && audioUrl) {
+      audioRef.current.play().catch(err => {
+        console.error('Manual play error:', err);
+        setAudioError('Could not play audio: ' + err.message);
+      });
+    }
+  };
 
   // Initialize speech recognition
   useEffect(() => {
@@ -185,9 +269,41 @@ const Chat = () => {
 
       setMessages(prev => [...prev, assistantMessage]);
 
-      // Synthesize speech
-      const ttsResult = await synthesizeSpeech(response.responseText);
-      setAudioUrl(ttsResult.audioUrl);
+      // Get user's voice ID from localStorage (if they've cloned their voice)
+      const userVoiceId = localStorage.getItem('voice_id');
+      
+      // Synthesize speech with user's voice and emotion for prosody-aware synthesis
+      // Only synthesize if voice_id is available (user has cloned their voice)
+      if (userVoiceId) {
+        try {
+          console.log('Synthesizing speech with voice_id:', userVoiceId);
+          const ttsResult = await synthesizeSpeech(
+            response.responseText, 
+            userVoiceId,  // Use user's cloned voice
+            emotionData.emotion
+          );
+          console.log('TTS result:', ttsResult);
+          
+          if (ttsResult && ttsResult.audioUrl) {
+            console.log('Setting audio URL:', ttsResult.audioUrl);
+            setAudioUrl(ttsResult.audioUrl);
+          } else {
+            console.warn('TTS returned no audio URL');
+            setError('Voice synthesis completed but no audio URL returned.');
+            setAudioError('No audio URL received from server.');
+          }
+        } catch (ttsError) {
+          console.error('Voice synthesis failed:', ttsError);
+          const errorMessage = ttsError.message || 'Failed to generate voice';
+          setError(`Voice synthesis failed: ${errorMessage}. Please check if your voice is cloned and ElevenLabs API is configured.`);
+          setAudioError('Voice synthesis failed. Please check console for details.');
+          // Continue without audio - conversation text is still displayed
+        }
+      } else {
+        console.log('No voice_id found - skipping voice synthesis. User can clone their voice in Voice Profile.');
+        setHasVoiceCloned(false);
+        // Conversation text is still displayed even without audio
+      }
     } catch (err) {
       console.error('Error processing transcript:', err);
       setError('Failed to generate response. Please try again.');
@@ -209,20 +325,22 @@ const Chat = () => {
       <header className="chat-header">
         <div className="header-left">
           <div className="header-logo"></div>
-          <div className="header-title">
-            <h1 className="app-title">Echocare</h1>
-            <p className="app-subtitle">Your personal therapy companion</p>
+          <div className="header-title-wrapper">
+            <div className="header-title">
+              <h1 className="app-title">Echocare</h1>
+              <p className="app-subtitle">Your personal therapy companion</p>
+            </div>
+            <button 
+              className="voice-profile-button"
+              onClick={() => setShowVoiceProfileModal(true)}
+              title={voiceName ? "Manage your voice profile" : "Set up your voice profile"}
+            >
+              {voiceName || "Set Up Voice Profile"}
+            </button>
           </div>
         </div>
         <div className="header-icons">
           <button className="icon-button chat-icon">💬</button>
-          <button 
-            className="icon-button profile-button"
-            onClick={() => navigate('/profile-setup')}
-            title="Set up your profile"
-          >
-            👤
-          </button>
         </div>
       </header>
 
@@ -280,11 +398,46 @@ const Chat = () => {
         {isProcessing && (
           <div className="processing-indicator">Processing...</div>
         )}
+
+        {/* Audio Playing Indicator */}
+        {isAudioPlaying && !isMuted && (
+          <div className="audio-playing-indicator" style={{
+            color: '#20b2aa',
+            fontSize: '0.9rem',
+            textAlign: 'center',
+            marginTop: '0.5rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.5rem'
+          }}>
+            🔊 Playing response...
+          </div>
+        )}
       </main>
 
       {/* Conversation Section */}
       <div className="conversation-section">
-        <h2 className="conversation-title">Conversation</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+          <h2 className="conversation-title">Conversation</h2>
+          {!hasVoiceCloned && messages.length > 0 && (
+            <button
+              onClick={() => setShowVoiceProfileModal(true)}
+              style={{
+                fontSize: '0.85rem',
+                padding: '0.4rem 0.8rem',
+                background: '#20b2aa',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer'
+              }}
+              title="Clone your voice to hear responses in your own voice"
+            >
+              🎤 Clone Voice
+            </button>
+          )}
+        </div>
         <div className="conversation-messages">
           {messages.length === 0 ? (
             <div className="empty-conversation">
@@ -305,6 +458,39 @@ const Chat = () => {
         </div>
       </div>
 
+      {/* Audio Error Message */}
+      {audioError && (
+        <div className="audio-error-message" style={{
+          background: '#fff5f5',
+          border: '1px solid #ffcccc',
+          borderRadius: '8px',
+          padding: '0.75rem',
+          marginTop: '1rem',
+          textAlign: 'center',
+          fontSize: '0.9rem',
+          color: '#d32f2f'
+        }}>
+          {audioError}
+          {audioUrl && (
+            <button
+              onClick={playAudioManually}
+              style={{
+                marginLeft: '0.5rem',
+                padding: '0.25rem 0.75rem',
+                background: '#20b2aa',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '0.85rem'
+              }}
+            >
+              ▶️ Play
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Hidden Audio Player */}
       {audioUrl && (
         <audio
@@ -312,7 +498,54 @@ const Chat = () => {
           src={audioUrl}
           autoPlay
           muted={isMuted}
-          onEnded={() => setAudioUrl(null)}
+          preload="auto"
+          onPlay={() => {
+            console.log('Audio started playing');
+            setIsAudioPlaying(true);
+            setAudioError(null);
+          }}
+          onPause={() => {
+            console.log('Audio paused');
+            setIsAudioPlaying(false);
+          }}
+          onEnded={() => {
+            console.log('Audio playback ended');
+            setIsAudioPlaying(false);
+            setAudioUrl(null);
+            setAudioError(null);
+          }}
+          onError={(e) => {
+            console.error('Audio playback error:', e);
+            setIsAudioPlaying(false);
+            const errorMsg = audioRef.current?.error 
+              ? `Audio error: ${audioRef.current.error.message || 'Unknown error'}`
+              : 'Failed to play audio. Please check the audio file.';
+            setAudioError(errorMsg);
+          }}
+          onLoadedData={() => {
+            console.log('Audio loaded successfully');
+          }}
+          onCanPlay={() => {
+            console.log('Audio can play');
+          }}
+        />
+      )}
+
+      {/* Voice Profile Selection Modal */}
+      {showVoiceProfileModal && (
+        <VoiceProfileSelection
+          onClose={() => {
+            setShowVoiceProfileModal(false);
+            // Refresh voice profile info
+            const voiceId = localStorage.getItem('voice_id');
+            const storedVoiceName = localStorage.getItem('voice_name');
+            setHasVoiceCloned(!!voiceId);
+            setVoiceName(storedVoiceName);
+          }}
+          onNavigateToSetup={() => {
+            setShowVoiceProfileModal(false); // Close modal first
+            navigate('/voice-profile', { state: { isNewProfile: true } });
+          }}
         />
       )}
     </div>
