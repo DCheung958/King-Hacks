@@ -77,6 +77,35 @@
   line-height: 1.5;
 }
 
+/* Name Input Section */
+.name-input-section {
+  width: 100%;
+  margin-bottom: 2rem;
+}
+
+.name-input {
+  width: 100%;
+  padding: 1rem 1.5rem;
+  font-size: 1.1rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  background: white;
+  color: #2c3e50;
+  font-family: inherit;
+  transition: all 0.3s ease;
+  box-sizing: border-box;
+}
+
+.name-input:focus {
+  outline: none;
+  border-color: #20b2aa;
+  box-shadow: 0 0 0 3px rgba(32, 178, 170, 0.1);
+}
+
+.name-input::placeholder {
+  color: #9ca3af;
+}
+
 /* Text Sample Box */
 .text-sample-box {
   background: white;
@@ -375,6 +404,14 @@
 
 /* Responsive Design */
 @media (max-width: 768px) {
+  .voice-profile-page {
+    padding: 1.5rem 1rem;
+  }
+
+  .voice-profile-container {
+    max-width: 100%;
+  }
+
   .voice-profile-title {
     font-size: 1.75rem;
   }
@@ -401,6 +438,73 @@
   .progress-info {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .back-button,
+  .next-button,
+  .skip-button {
+    min-height: 44px;
+    padding: 0.75rem 1.25rem;
+    font-size: 0.95rem;
+  }
+}
+
+/* Mobile-specific optimizations (max-width: 600px) */
+@media (max-width: 600px) {
+  .voice-profile-page {
+    padding: 1rem 0.75rem;
+  }
+
+  .voice-profile-title {
+    font-size: 1.5rem;
+  }
+
+  .text-sample-box {
+    padding: 1.25rem;
+  }
+
+  .text-sample {
+    font-size: 0.95rem;
+  }
+
+  .audio-visualizer-circle {
+    width: 120px;
+    height: 120px;
+  }
+
+  .record-button {
+    min-width: 60px;
+    min-height: 60px;
+    width: 60px;
+    height: 60px;
+  }
+
+  .back-button,
+  .next-button,
+  .skip-button {
+    min-height: 48px;
+    padding: 0.875rem 1rem;
+    font-size: 0.9rem;
+  }
+
+  .navigation-buttons {
+    max-width: 100%;
+    gap: 0.75rem;
+  }
+}
+
+/* Very small screens (max-width: 400px) */
+@media (max-width: 400px) {
+  .voice-profile-title {
+    font-size: 1.3rem;
+  }
+
+  .text-sample-box {
+    padding: 1rem;
+  }
+
+  .text-sample {
+    font-size: 0.9rem;
   }
 }
 

@@ -18,8 +18,9 @@
 
 .header-left {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 1rem;
+  flex: 1;
 }
 
 .sidebar-toggle {
@@ -39,6 +40,15 @@
   justify-content: center;
   flex-shrink: 0;
   box-shadow: 0 2px 10px rgba(32, 178, 170, 0.3);
+  flex-shrink: 0;
+}
+
+.header-title-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1;
+  align-items: flex-start;
 }
 
 .logo-image {
@@ -70,6 +80,54 @@
 .header-icons {
   display: flex;
   gap: 0.75rem;
+  align-items: center;
+}
+
+.voice-name-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #20b2aa 0%, #48d1cc 100%);
+  color: white;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(32, 178, 170, 0.3);
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.voice-profile-button {
+  padding: 0.5rem 1rem;
+  background: white;
+  border: 2px solid #20b2aa;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #20b2aa;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(32, 178, 170, 0.2);
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  width: fit-content;
+  min-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 0.25rem;
+  margin-left: 0;
+}
+
+.voice-profile-button:hover {
+  background: linear-gradient(135deg, #20b2aa 0%, #48d1cc 100%);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(32, 178, 170, 0.3);
 }
 
 .icon-button {
@@ -921,6 +979,23 @@
     padding: 1rem;
   }
 
+  .chat-header {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .header-left {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .header-icons {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+    margin-top: 0.5rem;
+  }
+
   .app-title {
     font-size: 1.3rem;
   }
@@ -929,14 +1004,37 @@
     font-size: 0.85rem;
   }
 
+  .voice-profile-button {
+    min-width: 120px;
+    padding: 0.6rem 0.9rem;
+    font-size: 0.8rem;
+  }
+
+  .icon-button {
+    min-width: 44px;
+    min-height: 44px;
+    width: 44px;
+    height: 44px;
+  }
+
   .visualization-circle {
     width: 150px;
     height: 150px;
   }
 
+  .visualization-container {
+    height: 200px;
+  }
+
+  .control-buttons {
+    gap: 1rem;
+  }
+
   .control-button {
-    width: 55px;
-    height: 55px;
+    min-width: 60px;
+    min-height: 60px;
+    width: 60px;
+    height: 60px;
   }
 
   .mic-button {

@@ -241,21 +241,154 @@
 
 /* Responsive Design */
 @media (max-width: 768px) {
+  .welcome-page {
+    padding: 1.5rem;
+  }
+
+  .welcome-container {
+    max-width: 100%;
+  }
+
   .welcome-title {
     font-size: 2.2rem;
   }
 
   .welcome-description {
     font-size: 1rem;
+    margin-bottom: 2rem;
+  }
+
+  .feature-cards {
+    gap: 1.25rem;
+    margin-bottom: 2rem;
   }
 
   .feature-card {
     padding: 1.5rem;
   }
 
+  .feature-icon {
+    font-size: 2rem;
+  }
+
+  .feature-title {
+    font-size: 1.2rem;
+  }
+
+  .feature-description {
+    font-size: 0.95rem;
+  }
+
   .logo-circle {
     width: 100px;
     height: 100px;
+    margin-bottom: 1.5rem;
+  }
+
+  .signin-section {
+    padding: 1.5rem;
+  }
+
+  .signin-button,
+  .create-account-button {
+    min-height: 48px;
+    padding: 0.875rem 1.5rem;
+    font-size: 1rem;
+  }
+}
+
+/* Mobile-specific optimizations (max-width: 600px) */
+@media (max-width: 600px) {
+  .welcome-page {
+    padding: 1rem;
+  }
+
+  .welcome-title {
+    font-size: 1.8rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .welcome-description {
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .logo-circle {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 1.25rem;
+  }
+
+  .feature-cards {
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .feature-card {
+    padding: 1.25rem;
+  }
+
+  .feature-icon {
+    font-size: 1.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .feature-title {
+    font-size: 1.1rem;
+  }
+
+  .feature-description {
+    font-size: 0.9rem;
+  }
+
+  .signin-section {
+    padding: 1.25rem;
+    border-radius: 12px;
+  }
+
+  .form-group {
+    margin-bottom: 1.25rem;
+  }
+
+  .form-input {
+    padding: 0.75rem 0.875rem;
+    font-size: 0.95rem;
+    min-height: 44px;
+  }
+
+  .signin-button,
+  .create-account-button {
+    min-height: 48px;
+    padding: 0.875rem 1.25rem;
+    font-size: 0.95rem;
+  }
+}
+
+/* Very small screens (max-width: 400px) */
+@media (max-width: 400px) {
+  .welcome-page {
+    padding: 0.75rem;
+  }
+
+  .welcome-title {
+    font-size: 1.5rem;
+  }
+
+  .welcome-description {
+    font-size: 0.9rem;
+  }
+
+  .logo-circle {
+    width: 70px;
+    height: 70px;
+  }
+
+  .feature-card {
+    padding: 1rem;
+  }
+
+  .signin-section {
+    padding: 1rem;
   }
 }
 

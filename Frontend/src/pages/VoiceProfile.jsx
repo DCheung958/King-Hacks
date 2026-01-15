@@ -16,8 +16,10 @@ const OPTIONAL_FREE_SPEECH = true; // Enable optional free speech page
 const VoiceProfile = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const userName = location.state?.userName || localStorage.getItem('user_name') || '';
+  const isNewProfile = location.state?.isNewProfile || false;
   
+  const [voiceProfileName, setVoiceProfileName] = useState('');
+  const [showNameInput, setShowNameInput] = useState(true);
   const [currentStep, setCurrentStep] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState(null);
@@ -26,6 +28,7 @@ const VoiceProfile = () => {
   const [showFreeSpeech, setShowFreeSpeech] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [recordingConfirmed, setRecordingConfirmed] = useState(false);
   
   const mediaRecorderRef = useRef(null);
@@ -34,6 +37,7 @@ const VoiceProfile = () => {
   const analyserRef = useRef(null);
   const animationFrameRef = useRef(null);
   const audioPlayerRef = useRef(null);
+  const audioUrlRef = useRef(null);
 
   const totalSteps = OPTIONAL_FREE_SPEECH ? VOICE_SAMPLES.length + 1 : VOICE_SAMPLES.length;
   const isFreeSpeechStep = currentStep === VOICE_SAMPLES.length;
@@ -50,6 +54,14 @@ const VoiceProfile = () => {
       }
       if (audioContextRef.current) {
         audioContextRef.current.close();
+      }
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current = null;
+      }
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = null;
       }
     };
   }, []);
@@ -125,24 +137,58 @@ const VoiceProfile = () => {
     const currentRecording = isFreeSpeechStep ? freeSpeechRecording : recordings[currentStep];
     if (!currentRecording) return;
 
+    // If paused, resume playback
+    if (isPaused && audioPlayerRef.current) {
+      audioPlayerRef.current.play();
+      setIsPlaying(true);
+      setIsPaused(false);
+      return;
+    }
+
+    // If already playing, pause it
+    if (isPlaying && audioPlayerRef.current) {
+      pauseRecording();
+      return;
+    }
+
     // Create audio URL from blob
     const audioUrl = URL.createObjectURL(currentRecording);
+    audioUrlRef.current = audioUrl;
     const audio = new Audio(audioUrl);
     audioPlayerRef.current = audio;
 
     audio.onended = () => {
       setIsPlaying(false);
-      URL.revokeObjectURL(audioUrl);
+      setIsPaused(false);
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = null;
+      }
+      audioPlayerRef.current = null;
     };
 
     audio.onerror = () => {
       setIsPlaying(false);
+      setIsPaused(false);
       setError('Failed to play recording');
-      URL.revokeObjectURL(audioUrl);
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = null;
+      }
+      audioPlayerRef.current = null;
     };
 
     setIsPlaying(true);
+    setIsPaused(false);
     audio.play();
+  };
+
+  const pauseRecording = () => {
+    if (audioPlayerRef.current && isPlaying) {
+      audioPlayerRef.current.pause();
+      setIsPlaying(false);
+      setIsPaused(true);
+    }
   };
 
   const tryAgain = () => {
@@ -151,7 +197,12 @@ const VoiceProfile = () => {
       audioPlayerRef.current.pause();
       audioPlayerRef.current = null;
     }
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
     setIsPlaying(false);
+    setIsPaused(false);
     setRecordingConfirmed(false);
     // Clear current recording
     if (isFreeSpeechStep) {
@@ -170,7 +221,12 @@ const VoiceProfile = () => {
       audioPlayerRef.current.pause();
       audioPlayerRef.current = null;
     }
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
     setIsPlaying(false);
+    setIsPaused(false);
   };
 
   const visualizeAudio = () => {
@@ -208,6 +264,15 @@ const VoiceProfile = () => {
     draw();
   };
 
+  const handleNameSubmit = () => {
+    if (!voiceProfileName.trim()) {
+      setError('Please enter a name for your voice profile');
+      return;
+    }
+    setShowNameInput(false);
+    setError(null);
+  };
+
   const handleNext = async () => {
     if (isFreeSpeechStep) {
       // On free speech step, proceed to batch upload and clone
@@ -223,22 +288,23 @@ const VoiceProfile = () => {
         
         // Get user ID from localStorage
         const userId = localStorage.getItem('user_id');
-        const userName = localStorage.getItem('user_name') || userName || 'User';
+        const profileName = voiceProfileName.trim() || 'My Voice Profile';
         
         // Batch upload and clone all samples at once (saves ElevenLabs credits)
         const result = await batchCloneVoice(
           allRecordings,
           userId,
-          `${userName}'s Voice`
+          profileName
         );
         
-        // Store voice_id if cloning was successful
+        // Store voice_id and voice name if cloning was successful
         if (result.voiceId) {
           localStorage.setItem('voice_id', result.voiceId);
+          localStorage.setItem('voice_name', profileName);
         }
         
-        // Navigate to chat after batch upload/clone
-        navigate('/chat');
+        // Navigate to selection page or chat after batch upload/clone
+        navigate('/voice-profile-selection');
       } catch (err) {
         console.error('Error batch cloning voice:', err);
         setError(err.message || 'Failed to upload and clone voice samples. Please try again.');
@@ -262,21 +328,22 @@ const VoiceProfile = () => {
           
           // Get user ID from localStorage
           const userId = localStorage.getItem('user_id');
-          const userName = localStorage.getItem('user_name') || userName || 'User';
+          const profileName = voiceProfileName.trim() || 'My Voice Profile';
           
           // Batch upload and clone all samples at once
           const result = await batchCloneVoice(
             recordings,
             userId,
-            `${userName}'s Voice`
+            profileName
           );
           
-          // Store voice_id if cloning was successful
+          // Store voice_id and voice name if cloning was successful
           if (result.voiceId) {
             localStorage.setItem('voice_id', result.voiceId);
+            localStorage.setItem('voice_name', profileName);
           }
           
-          navigate('/chat');
+          navigate('/voice-profile-selection');
         } catch (err) {
           console.error('Error batch cloning voice:', err);
           setError(err.message || 'Failed to upload and clone voice samples. Please try again.');
@@ -294,21 +361,22 @@ const VoiceProfile = () => {
       
       // Get user ID from localStorage
       const userId = localStorage.getItem('user_id');
-      const userName = localStorage.getItem('user_name') || userName || 'User';
+      const profileName = voiceProfileName.trim() || 'My Voice Profile';
       
       // Batch upload and clone all required samples at once
       const result = await batchCloneVoice(
         recordings,
         userId,
-        `${userName}'s Voice`
+        profileName
       );
       
-      // Store voice_id if cloning was successful
+      // Store voice_id and voice name if cloning was successful
       if (result.voiceId) {
         localStorage.setItem('voice_id', result.voiceId);
+        localStorage.setItem('voice_name', profileName);
       }
       
-      navigate('/chat');
+      navigate('/voice-profile-selection');
     } catch (err) {
       console.error('Error batch cloning voice:', err);
       setError(err.message || 'Failed to upload and clone voice samples. Please try again.');
@@ -316,9 +384,60 @@ const VoiceProfile = () => {
     }
   };
 
-  // Can proceed if we have a recording for the current step, it's confirmed, and we're not currently recording
+  // Can proceed if we have a recording for the current step, it's confirmed, and we're not currently recording or playing
   const hasRecording = isFreeSpeechStep ? freeSpeechRecording !== null : recordings[currentStep] !== undefined;
   const canProceed = hasRecording && recordingConfirmed && !isRecording && !isPlaying;
+
+  // Show name input step first
+  if (showNameInput) {
+    return (
+      <div className="voice-profile-page">
+        <div className="voice-profile-container">
+          <h1 className="voice-profile-title">Name Your Voice Profile</h1>
+          
+          <p className="voice-profile-instructions">
+            Give your voice profile a name to help you identify it later. This name will be used to label your personalized voice.
+          </p>
+
+          <div className="name-input-section">
+            <input
+              type="text"
+              className="name-input"
+              placeholder="e.g., My Therapy Voice, Work Voice, etc."
+              value={voiceProfileName}
+              onChange={(e) => {
+                setVoiceProfileName(e.target.value);
+                setError(null);
+              }}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && voiceProfileName.trim()) {
+                  handleNameSubmit();
+                }
+              }}
+              autoFocus
+            />
+            {error && <div className="error-message">{error}</div>}
+          </div>
+
+          <div className="navigation-buttons">
+            <button 
+              className="back-button"
+              onClick={() => navigate('/chat')}
+            >
+              Cancel
+            </button>
+            <button 
+              className="next-button" 
+              onClick={handleNameSubmit}
+              disabled={!voiceProfileName.trim()}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="voice-profile-page">
@@ -398,10 +517,12 @@ const VoiceProfile = () => {
                 <button 
                   className="replay-button" 
                   onClick={replayRecording}
-                  disabled={isPlaying}
+                  disabled={false}
                 >
-                  <span className="replay-icon">▶️</span>
-                  {isPlaying ? 'Playing...' : 'Replay'}
+                  <span className="replay-icon">
+                    {isPlaying ? '⏸️' : isPaused ? '▶️' : '▶️'}
+                  </span>
+                  {isPlaying ? 'Pause' : isPaused ? 'Resume' : 'Replay'}
                 </button>
                 <button 
                   className="try-again-button" 
@@ -414,7 +535,9 @@ const VoiceProfile = () => {
               </div>
               <p className="recording-instruction">
                 {isPlaying 
-                  ? 'Playing your recording...' 
+                  ? 'Playing your recording... Tap pause to stop.' 
+                  : isPaused
+                  ? 'Recording paused. Tap resume to continue.'
                   : 'Listen to your recording. If you\'re happy with it, press Next to continue.'}
               </p>
             </>

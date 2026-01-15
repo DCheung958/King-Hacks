@@ -23,8 +23,61 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  /* Prevent text size adjustment on mobile */
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  -ms-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Improve touch scrolling on iOS */
+  -webkit-overflow-scrolling: touch;
 }
 
 #root {
   min-height: 100vh;
+  /* Prevent horizontal scroll on mobile */
+  overflow-x: hidden;
+}
+
+/* Ensure all interactive elements are touch-friendly */
+button,
+a,
+input,
+select,
+textarea {
+  /* Minimum touch target size (44x44px recommended by Apple/Google) */
+  min-height: 44px;
+  min-width: 44px;
+  /* Improve touch response */
+  touch-action: manipulation;
+}
+
+/* Improve tap highlight on mobile */
+a,
+button {
+  -webkit-tap-highlight-color: rgba(32, 178, 170, 0.2);
+  tap-highlight-color: rgba(32, 178, 170, 0.2);
+}
+
+/* Mobile optimizations */
+@media (max-width: 600px) {
+  body {
+    font-size: 16px; /* Prevent zoom on iOS when focusing inputs */
+  }
+  
+  /* Ensure readable text without zooming */
+  p, span, div {
+    font-size: clamp(14px, 4vw, 16px);
+  }
+  
+  h1 {
+    font-size: clamp(1.5rem, 8vw, 2.5rem);
+  }
+  
+  h2 {
+    font-size: clamp(1.25rem, 6vw, 2rem);
+  }
+  
+  h3 {
+    font-size: clamp(1.1rem, 5vw, 1.5rem);
+  }
 }

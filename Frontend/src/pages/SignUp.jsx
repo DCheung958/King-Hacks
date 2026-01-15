@@ -83,6 +83,14 @@ const SignUp = () => {
       if (data.name) {
         localStorage.setItem('user_name', data.name);
       }
+      
+      // Store voice profile if available (unlikely on signup, but handle it)
+      if (data.voice_id) {
+        localStorage.setItem('voice_id', data.voice_id);
+      }
+      if (data.voice_name) {
+        localStorage.setItem('voice_name', data.voice_name);
+      }
 
       // Redirect to onboarding
       navigate('/onboarding');

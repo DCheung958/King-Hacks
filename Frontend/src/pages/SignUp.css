@@ -249,12 +249,70 @@
     padding: 1rem;
   }
   
+  .signup-container {
+    max-width: 100%;
+  }
+  
+  .logo-circle {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 1.5rem;
+  }
+  
   .signup-title {
     font-size: 2rem;
   }
   
   .signup-form {
     padding: 1.5rem;
+  }
+  
+  .form-input {
+    min-height: 44px;
+  }
+  
+  .signup-button {
+    min-height: 48px;
+  }
+}
+
+/* Mobile-specific optimizations (max-width: 600px) */
+@media (max-width: 600px) {
+  .signup-page {
+    padding: 0.75rem;
+  }
+  
+  .signup-title {
+    font-size: 1.75rem;
+  }
+  
+  .signup-form {
+    padding: 1.25rem;
+  }
+  
+  .form-group {
+    margin-bottom: 1.25rem;
+  }
+  
+  .form-input {
+    padding: 0.75rem 0.875rem;
+    font-size: 0.95rem;
+  }
+  
+  .signup-button {
+    padding: 0.875rem 1.25rem;
+    font-size: 0.95rem;
+  }
+}
+
+/* Very small screens (max-width: 400px) */
+@media (max-width: 400px) {
+  .signup-title {
+    font-size: 1.5rem;
+  }
+  
+  .signup-form {
+    padding: 1rem;
   }
 }
 

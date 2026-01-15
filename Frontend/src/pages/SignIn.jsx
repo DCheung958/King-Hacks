@@ -68,6 +68,14 @@ const SignIn = () => {
       if (data.name) {
         localStorage.setItem('user_name', data.name);
       }
+      
+      // Store voice profile if available
+      if (data.voice_id) {
+        localStorage.setItem('voice_id', data.voice_id);
+      }
+      if (data.voice_name) {
+        localStorage.setItem('voice_name', data.voice_name);
+      }
 
       // Redirect to chat
       navigate('/chat');

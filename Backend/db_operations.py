@@ -77,6 +77,35 @@ async def get_user_by_id(user_id: UUID) -> Optional[Dict[str, Any]]:
     return None
 
 
+async def update_user_voice_profile(
+    user_id: UUID,
+    voice_id: Optional[str] = None,
+    voice_name: Optional[str] = None
+) -> Dict[str, Any]:
+    """Update user's voice profile (voice_id and voice_name)"""
+    update_values = {}
+    if voice_id is not None:
+        update_values["voice_id"] = voice_id
+    if voice_name is not None:
+        update_values["voice_name"] = voice_name
+    
+    if not update_values:
+        # No updates to make, just return current user
+        user = await get_user_by_id(user_id)
+        if not user:
+            raise ValueError(f"User with id {user_id} not found")
+        return user
+    
+    query = users.update().where(users.c.id == user_id).values(**update_values)
+    await database.execute(query)
+    
+    # Return updated user
+    updated_user = await get_user_by_id(user_id)
+    if not updated_user:
+        raise ValueError(f"User with id {user_id} not found after update")
+    return updated_user
+
+
 # ========== VOICE SAMPLE OPERATIONS ==========
 
 async def create_voice_sample(

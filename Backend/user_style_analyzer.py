@@ -46,6 +46,125 @@ def extract_common_phrases(messages: List[str], min_count: int = 2, min_length: 
     return common[:10]  # Return top 10
 
 
+def detect_filler_words(messages: List[str]) -> Dict[str, any]:
+    """
+    Detect filler words and speech patterns from messages
+    
+    Args:
+        messages: List of user message texts
+        
+    Returns:
+        Dictionary with filler word analysis
+    """
+    if not messages:
+        return {
+            "filler_words": [],
+            "filler_frequency": 0.0,
+            "common_fillers": []
+        }
+    
+    # Common filler words
+    filler_words_list = [
+        'like', 'uh', 'um', 'you know', 'i mean', 'well', 'so', 'actually',
+        'basically', 'literally', 'sort of', 'kind of', 'right', 'okay', 'ok',
+        'yeah', 'yep', 'hmm', 'ah', 'er', 'erm'
+    ]
+    
+    filler_counts = {}
+    total_words = 0
+    total_fillers = 0
+    
+    for msg in messages:
+        words = msg.lower().split()
+        total_words += len(words)
+        
+        for word in words:
+            # Remove punctuation for matching
+            clean_word = re.sub(r'[^\w]', '', word)
+            
+            # Check for exact filler matches
+            if clean_word in filler_words_list:
+                filler_counts[clean_word] = filler_counts.get(clean_word, 0) + 1
+                total_fillers += 1
+            
+            # Check for multi-word fillers
+            for i in range(len(words) - 1):
+                two_word = f"{words[i]} {words[i+1]}"
+                clean_two = re.sub(r'[^\w\s]', '', two_word)
+                if clean_two in ['you know', 'i mean', 'sort of', 'kind of']:
+                    filler_counts[clean_two] = filler_counts.get(clean_two, 0) + 1
+                    total_fillers += 1
+    
+    # Calculate frequency
+    filler_frequency = total_fillers / total_words if total_words > 0 else 0.0
+    
+    # Get most common fillers
+    common_fillers = sorted(filler_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    common_fillers = [word for word, _ in common_fillers]
+    
+    return {
+        "filler_words": list(filler_counts.keys()),
+        "filler_frequency": filler_frequency,
+        "common_fillers": common_fillers
+    }
+
+
+def analyze_sentence_structure(messages: List[str]) -> Dict[str, any]:
+    """
+    Analyze sentence structure: length, pace, complexity
+    
+    Args:
+        messages: List of user message texts
+        
+    Returns:
+        Dictionary with sentence structure analysis
+    """
+    if not messages:
+        return {
+            "avg_sentence_length": 0,
+            "avg_words_per_sentence": 0,
+            "sentence_count": 0,
+            "pace": "normal"
+        }
+    
+    all_sentences = []
+    for msg in messages:
+        # Split by sentence endings
+        sentences = re.split(r'[.!?]+', msg)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        all_sentences.extend(sentences)
+    
+    if not all_sentences:
+        return {
+            "avg_sentence_length": 0,
+            "avg_words_per_sentence": 0,
+            "sentence_count": 0,
+            "pace": "normal"
+        }
+    
+    # Calculate metrics
+    sentence_lengths = [len(s) for s in all_sentences]
+    words_per_sentence = [len(s.split()) for s in all_sentences]
+    
+    avg_length = sum(sentence_lengths) / len(sentence_lengths)
+    avg_words = sum(words_per_sentence) / len(words_per_sentence)
+    
+    # Determine pace (short sentences = fast pace, long = slow)
+    if avg_words < 8:
+        pace = "fast"
+    elif avg_words > 20:
+        pace = "slow"
+    else:
+        pace = "normal"
+    
+    return {
+        "avg_sentence_length": avg_length,
+        "avg_words_per_sentence": avg_words,
+        "sentence_count": len(all_sentences),
+        "pace": pace
+    }
+
+
 def analyze_speech_style(messages: List[str]) -> Dict[str, any]:
     """
     Analyze speech style characteristics from user messages
@@ -62,7 +181,9 @@ def analyze_speech_style(messages: List[str]) -> Dict[str, any]:
             "punctuation_style": "normal",
             "formality": "neutral",
             "common_starters": [],
-            "common_connectors": []
+            "common_connectors": [],
+            "filler_words": {},
+            "sentence_structure": {}
         }
     
     # Average message length
@@ -105,12 +226,20 @@ def analyze_speech_style(messages: List[str]) -> Dict[str, any]:
     common_connectors = sorted(connector_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     common_connectors = [word for word, _ in common_connectors]
     
+    # Analyze filler words
+    filler_analysis = detect_filler_words(messages)
+    
+    # Analyze sentence structure
+    sentence_structure = analyze_sentence_structure(messages)
+    
     return {
         "avg_length": avg_length,
         "punctuation_style": punctuation_style,
         "formality": formality,
         "common_starters": common_starters,
-        "common_connectors": common_connectors
+        "common_connectors": common_connectors,
+        "filler_words": filler_analysis,
+        "sentence_structure": sentence_structure
     }
 
 

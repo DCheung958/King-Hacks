@@ -95,19 +95,31 @@ async def run_migrations():
     )
     
     try:
-        # Read migration file
-        migration_file = Path(__file__).parent / "migrations" / "001_initial_schema.sql"
-        
-        if not migration_file.exists():
-            print(f"Migration file not found: {migration_file}")
+        # Get all migration files in order
+        migrations_dir = Path(__file__).parent / "migrations"
+        if not migrations_dir.exists():
+            print(f"Migrations directory not found: {migrations_dir}")
             return
         
-        print(f"Running migration: {migration_file}")
-        migration_sql = migration_file.read_text()
+        # Get all .sql files and sort them by filename (which should have numeric prefixes)
+        migration_files = sorted(migrations_dir.glob("*.sql"))
         
-        # Execute migration
-        await conn.execute(migration_sql)
-        print("Migration completed successfully!")
+        if not migration_files:
+            print("No migration files found!")
+            return
+        
+        print(f"Found {len(migration_files)} migration file(s)")
+        
+        # Run each migration in order
+        for migration_file in migration_files:
+            print(f"\nRunning migration: {migration_file.name}")
+            migration_sql = migration_file.read_text()
+            
+            # Execute migration
+            await conn.execute(migration_sql)
+            print(f"✓ {migration_file.name} completed successfully!")
+        
+        print("\nAll migrations completed successfully!")
         
     except Exception as e:
         print(f"Error running migration: {e}")

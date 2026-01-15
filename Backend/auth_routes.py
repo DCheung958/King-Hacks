@@ -67,6 +67,8 @@ class AuthResponse(BaseModel):
     user_id: str
     email: str
     name: Optional[str] = None
+    voice_id: Optional[str] = None
+    voice_name: Optional[str] = None
 
 
 @router.post("/login", response_model=AuthResponse)
@@ -121,7 +123,9 @@ async def login(credentials: LoginRequest):
         access_token=access_token,
         user_id=str(user["id"]),
         email=user["email"],
-        name=user.get("name")
+        name=user.get("name"),
+        voice_id=user.get("voice_id"),
+        voice_name=user.get("voice_name")
     )
 
 
@@ -200,7 +204,9 @@ async def signup(credentials: SignupRequest):
             access_token=access_token,
             user_id=new_user["id"],
             email=new_user["email"],
-            name=new_user.get("name")
+            name=new_user.get("name"),
+            voice_id=new_user.get("voice_id"),
+            voice_name=new_user.get("voice_name")
         )
     except HTTPException:
         # Re-raise HTTP exceptions as-is

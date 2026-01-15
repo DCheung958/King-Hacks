@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { detectEmotion, generateResponse } from '../services/chatService';
 import { synthesizeSpeech } from '../services/ttsService';
 import elephantLogo from '../assets/elephant-logo.png';
@@ -7,6 +7,7 @@ import './Chat.css';
 
 const Chat = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [messages, setMessages] = useState([]);
   const [audioUrl, setAudioUrl] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -31,6 +32,83 @@ const Chat = () => {
   const textInputRef = useRef(null);
   const visualizationRef = useRef(null);
   const [orbState, setOrbState] = useState('ready'); // 'ready', 'listening', 'speaking', 'silent'
+
+  // Check if user has cloned their voice and get voice name
+  useEffect(() => {
+    const voiceId = localStorage.getItem('voice_id');
+    const storedVoiceName = localStorage.getItem('voice_name');
+    setHasVoiceCloned(!!voiceId);
+    setVoiceName(storedVoiceName);
+  }, [showVoiceProfileModal]); // Refresh when modal closes
+
+  // Reset modal state when returning to chat page
+  useEffect(() => {
+    // If we're on the chat page and coming from voice profile, close modal
+    if (location.pathname === '/chat') {
+      // Check if we're returning from voice profile (no state means we navigated back)
+      if (location.state === null || location.state === undefined) {
+        setShowVoiceProfileModal(false);
+      }
+    }
+  }, [location]);
+
+  // Handle audio playback when audioUrl changes
+  useEffect(() => {
+    if (audioUrl && audioRef.current) {
+      console.log('Audio URL set, attempting to play:', audioUrl);
+      setAudioError(null);
+      
+      const playAudio = async () => {
+        try {
+          // Reset audio element
+          audioRef.current.load();
+          
+          // Wait for audio to be ready
+          const handleCanPlay = async () => {
+            try {
+              if (!isMuted && audioRef.current) {
+                await audioRef.current.play();
+                console.log('Audio playing successfully');
+                setAudioError(null);
+              } else {
+                console.log('Audio muted, not playing');
+              }
+            } catch (playError) {
+              console.error('Error playing audio:', playError);
+              setAudioError('Could not play audio automatically. Click the play button below.');
+              // Some browsers require user interaction
+              if (playError.name === 'NotAllowedError') {
+                console.warn('Autoplay blocked. User interaction required.');
+              }
+            }
+            // Remove listener after first play attempt
+            audioRef.current.removeEventListener('canplay', handleCanPlay);
+          };
+          
+          audioRef.current.addEventListener('canplay', handleCanPlay);
+          
+          // Also try immediate play (in case it's already loaded)
+          if (audioRef.current.readyState >= 2) {
+            handleCanPlay();
+          }
+        } catch (error) {
+          console.error('Error loading audio:', error);
+          setAudioError('Failed to load audio file.');
+        }
+      };
+      
+      playAudio();
+    }
+  }, [audioUrl, isMuted]);
+
+  const playAudioManually = () => {
+    if (audioRef.current && audioUrl) {
+      audioRef.current.play().catch(err => {
+        console.error('Manual play error:', err);
+        setAudioError('Could not play audio: ' + err.message);
+      });
+    }
+  };
 
   // Initialize speech recognition
   useEffect(() => {
@@ -756,6 +834,39 @@ const Chat = () => {
         </div>
       </main>
 
+      {/* Audio Error Message */}
+      {audioError && (
+        <div className="audio-error-message" style={{
+          background: '#fff5f5',
+          border: '1px solid #ffcccc',
+          borderRadius: '8px',
+          padding: '0.75rem',
+          marginTop: '1rem',
+          textAlign: 'center',
+          fontSize: '0.9rem',
+          color: '#d32f2f'
+        }}>
+          {audioError}
+          {audioUrl && (
+            <button
+              onClick={playAudioManually}
+              style={{
+                marginLeft: '0.5rem',
+                padding: '0.25rem 0.75rem',
+                background: '#20b2aa',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '0.85rem'
+              }}
+            >
+              ▶️ Play
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Hidden Audio Player */}
       {audioUrl && (
         <audio
@@ -763,7 +874,54 @@ const Chat = () => {
           src={audioUrl}
           autoPlay
           muted={isMuted}
-          onEnded={() => setAudioUrl(null)}
+          preload="auto"
+          onPlay={() => {
+            console.log('Audio started playing');
+            setIsAudioPlaying(true);
+            setAudioError(null);
+          }}
+          onPause={() => {
+            console.log('Audio paused');
+            setIsAudioPlaying(false);
+          }}
+          onEnded={() => {
+            console.log('Audio playback ended');
+            setIsAudioPlaying(false);
+            setAudioUrl(null);
+            setAudioError(null);
+          }}
+          onError={(e) => {
+            console.error('Audio playback error:', e);
+            setIsAudioPlaying(false);
+            const errorMsg = audioRef.current?.error 
+              ? `Audio error: ${audioRef.current.error.message || 'Unknown error'}`
+              : 'Failed to play audio. Please check the audio file.';
+            setAudioError(errorMsg);
+          }}
+          onLoadedData={() => {
+            console.log('Audio loaded successfully');
+          }}
+          onCanPlay={() => {
+            console.log('Audio can play');
+          }}
+        />
+      )}
+
+      {/* Voice Profile Selection Modal */}
+      {showVoiceProfileModal && (
+        <VoiceProfileSelection
+          onClose={() => {
+            setShowVoiceProfileModal(false);
+            // Refresh voice profile info
+            const voiceId = localStorage.getItem('voice_id');
+            const storedVoiceName = localStorage.getItem('voice_name');
+            setHasVoiceCloned(!!voiceId);
+            setVoiceName(storedVoiceName);
+          }}
+          onNavigateToSetup={() => {
+            setShowVoiceProfileModal(false); // Close modal first
+            navigate('/voice-profile', { state: { isNewProfile: true } });
+          }}
         />
       )}
     </div>
