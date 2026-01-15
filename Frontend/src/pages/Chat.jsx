@@ -8,7 +8,14 @@ import './Chat.css';
 const Chat = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [messages, setMessages] = useState([]);
+  const [conversations, setConversations] = useState([
+    {
+      id: 1,
+      name: 'Chat 1',
+      messages: []
+    }
+  ]);
+  const [activeConversationId, setActiveConversationId] = useState(1);
   const [audioUrl, setAudioUrl] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
@@ -21,6 +28,12 @@ const Chat = () => {
   const [audioError, setAudioError] = useState(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [showVoiceProfileModal, setShowVoiceProfileModal] = useState(false);
+  const [inputMode, setInputMode] = useState('voice'); // 'voice' or 'text'
+  const [textInput, setTextInput] = useState('');
+  const [showPastConversations, setShowPastConversations] = useState(false);
+  const [renameModalOpen, setRenameModalOpen] = useState(false);
+  const [renameConversationId, setRenameConversationId] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
   
   const recognitionRef = useRef(null);
   const streamRef = useRef(null);
@@ -28,6 +41,39 @@ const Chat = () => {
   const analyserRef = useRef(null);
   const animationFrameRef = useRef(null);
   const audioRef = useRef(null);
+
+  // Load conversations from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('echocare_conversations');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.conversations && Array.isArray(parsed.conversations) && parsed.conversations.length > 0) {
+          setConversations(parsed.conversations);
+          setActiveConversationId(
+            parsed.activeConversationId ||
+            parsed.conversations[0]?.id ||
+            1
+          );
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load conversations from localStorage', e);
+    }
+  }, []);
+
+  // Persist conversations to localStorage
+  useEffect(() => {
+    try {
+      const payload = {
+        conversations,
+        activeConversationId
+      };
+      localStorage.setItem('echocare_conversations', JSON.stringify(payload));
+    } catch (e) {
+      console.error('Failed to save conversations to localStorage', e);
+    }
+  }, [conversations, activeConversationId]);
 
   // Check if user has cloned their voice and get voice name
   useEffect(() => {
@@ -231,6 +277,15 @@ const Chat = () => {
   };
 
 
+  const handleTextSubmit = async (e) => {
+    e.preventDefault();
+    if (!textInput.trim()) return;
+    
+    const text = textInput.trim();
+    setTextInput('');
+    await handleFinalTranscript(text);
+  };
+
   const handleFinalTranscript = useCallback(async (text) => {
     if (!text.trim()) return;
 
@@ -239,14 +294,23 @@ const Chat = () => {
     setInterimTranscript('');
 
     try {
-      // Add user message immediately
+      // Add user message immediately to the active conversation
       const userMessage = {
         id: `user-${Date.now()}`,
         role: 'user',
         text: text.trim()
       };
 
-      setMessages(prev => [...prev, userMessage]);
+      setConversations(prev =>
+        prev.map(conversation =>
+          conversation.id === activeConversationId
+            ? {
+                ...conversation,
+                messages: [...conversation.messages, userMessage]
+              }
+            : conversation
+        )
+      );
 
       // Detect emotion
       const emotionData = await detectEmotion(text.trim());
@@ -267,7 +331,16 @@ const Chat = () => {
         text: response.responseText
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
+      setConversations(prev =>
+        prev.map(conversation =>
+          conversation.id === activeConversationId
+            ? {
+                ...conversation,
+                messages: [...conversation.messages, assistantMessage]
+              }
+            : conversation
+        )
+      );
 
       // Get user's voice ID from localStorage (if they've cloned their voice)
       const userVoiceId = localStorage.getItem('voice_id');
@@ -310,7 +383,7 @@ const Chat = () => {
     } finally {
       setIsProcessing(false);
     }
-  }, []);
+  }, [activeConversationId, setConversations]);
 
   const toggleMute = () => {
     setIsMuted(!isMuted);
@@ -318,6 +391,83 @@ const Chat = () => {
       audioRef.current.muted = !isMuted;
     }
   };
+
+  const handleNewConversation = () => {
+    const newIndex = conversations.length + 1;
+    const newConversation = {
+      id: Date.now(),
+      name: `Chat ${newIndex}`,
+      messages: []
+    };
+
+    setConversations(prev => [...prev, newConversation]);
+    setActiveConversationId(newConversation.id);
+    setError(null);
+    setAudioUrl(null);
+  };
+
+  const openRenameModal = (conversationId, e) => {
+    e.stopPropagation();
+    const current = conversations.find(conv => conv.id === conversationId);
+    setRenameConversationId(conversationId);
+    setRenameValue(current?.name || '');
+    setRenameModalOpen(true);
+  };
+
+  const closeRenameModal = () => {
+    setRenameModalOpen(false);
+    setRenameConversationId(null);
+    setRenameValue('');
+  };
+
+  const handleRenameSubmit = (e) => {
+    e.preventDefault();
+    const trimmed = renameValue.trim();
+    if (!trimmed || !renameConversationId) {
+      closeRenameModal();
+      return;
+    }
+
+    setConversations(prev =>
+      prev.map(conv =>
+        conv.id === renameConversationId ? { ...conv, name: trimmed } : conv
+      )
+    );
+    closeRenameModal();
+  };
+
+  const handleDeleteConversation = (conversationId, e) => {
+    e.stopPropagation(); // Prevent triggering the conversation selection
+    
+    setConversations(prev => {
+      const filtered = prev.filter(conv => conv.id !== conversationId);
+      
+      // If we deleted the active conversation, switch to another one
+      if (conversationId === activeConversationId) {
+        if (filtered.length > 0) {
+          setActiveConversationId(filtered[0].id);
+        } else {
+          // If no conversations left, create a new one
+          const newConversation = {
+            id: Date.now(),
+            name: 'Chat 1',
+            messages: []
+          };
+          setActiveConversationId(newConversation.id);
+          return [newConversation];
+        }
+      }
+      
+      return filtered;
+    });
+  };
+
+  const currentConversation =
+    conversations.find(conv => conv.id === activeConversationId) ||
+    conversations[0] ||
+    { id: 1, name: 'Chat 1', messages: [] };
+
+  const messages = currentConversation.messages || [];
 
   return (
     <div className="chat-page-new">
@@ -340,123 +490,279 @@ const Chat = () => {
           </div>
         </div>
         <div className="header-icons">
-          <button className="icon-button chat-icon">💬</button>
+          <button
+            className="icon-button menu-icon"
+            onClick={() => setShowPastConversations(true)}
+            aria-label="Open past conversations"
+          >
+            ☰
+          </button>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="chat-main">
-        {/* Mood Detection */}
-        <div className="mood-display">
-          <span className="mood-label">Detected Mood:</span>
-          <span className="mood-value">{detectedMood}</span>
-        </div>
-
-        {/* Audio Visualization Circle */}
-        <div className="visualization-container">
-          <div className={`visualization-circle ${isListening ? 'active' : ''}`}></div>
-          
-          {/* Audio Bars */}
-          {isListening && (
-            <div className="audio-bars-container">
-              {Array.from({ length: 30 }).map((_, i) => (
-                <div key={i} className="chat-audio-bar"></div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Instruction Text */}
-        <p className="instruction-text">
-          {isListening ? 'Listening...' : 'Tap the microphone to start speaking'}
-        </p>
-
-        {/* Control Buttons */}
-        <div className="control-buttons">
-          <button 
-            className={`control-button speaker-button ${isMuted ? 'muted' : ''}`}
-            onClick={toggleMute}
-            aria-label={isMuted ? 'Unmute' : 'Mute'}
-          >
-            {isMuted ? '🔇' : '🔊'}
-          </button>
-          <button
-            className={`control-button mic-button ${isListening ? 'active' : ''}`}
-            onClick={isListening ? stopListening : startListening}
-            aria-label={isListening ? 'Stop' : 'Start speaking'}
-          >
-            🎤
-          </button>
-        </div>
-
-        {/* Error Display */}
-        {error && (
-          <div className="error-message">{error}</div>
-        )}
-
-        {/* Processing Indicator */}
-        {isProcessing && (
-          <div className="processing-indicator">Processing...</div>
-        )}
-
-        {/* Audio Playing Indicator */}
-        {isAudioPlaying && !isMuted && (
-          <div className="audio-playing-indicator" style={{
-            color: '#20b2aa',
-            fontSize: '0.9rem',
-            textAlign: 'center',
-            marginTop: '0.5rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '0.5rem'
-          }}>
-            🔊 Playing response...
-          </div>
-        )}
-      </main>
-
-      {/* Conversation Section */}
-      <div className="conversation-section">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-          <h2 className="conversation-title">Conversation</h2>
-          {!hasVoiceCloned && messages.length > 0 && (
-            <button
-              onClick={() => setShowVoiceProfileModal(true)}
-              style={{
-                fontSize: '0.85rem',
-                padding: '0.4rem 0.8rem',
-                background: '#20b2aa',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer'
-              }}
-              title="Clone your voice to hear responses in your own voice"
-            >
-              🎤 Clone Voice
-            </button>
-          )}
-        </div>
-        <div className="conversation-messages">
-          {messages.length === 0 ? (
-            <div className="empty-conversation">
-              <p>Your conversation will appear here</p>
-            </div>
-          ) : (
-            messages.map(message => (
-              <div 
-                key={message.id} 
-                className={`conversation-message ${message.role}`}
+      {/* Main Layout */}
+      <div className="chat-layout">
+        {/* Left: Conversation Messages */}
+        <section className="conversation-section">
+          <div className="conversation-header">
+            <h2 className="conversation-title">
+              {currentConversation.name || 'Conversation'}
+            </h2>
+            {!hasVoiceCloned && messages.length > 0 && (
+              <button
+                onClick={() => setShowVoiceProfileModal(true)}
+                className="clone-voice-button"
+                title="Clone your voice to hear responses in your own voice"
               >
-                <div className="message-content">
-                  {message.text}
-                </div>
+                🎤 Clone Voice
+              </button>
+            )}
+          </div>
+          <div className="conversation-messages">
+            {messages.length === 0 ? (
+              <div className="empty-conversation">
+                <p>Your conversation will appear here</p>
               </div>
-            ))
+            ) : (
+              messages.map(message => (
+                <div 
+                  key={message.id} 
+                  className={`conversation-message ${message.role}`}
+                >
+                  <div className="message-content">
+                    {message.text}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        {/* Middle: Mood card + mic controls */}
+        <main className="chat-main">
+          {/* Mood Card */}
+          <div className="mood-card">
+            <p className="mood-card-main-text">I'm here with you.</p>
+            <p className="mood-card-secondary-text">How are you feeling right now?</p>
+            <div className="mood-card-insight-row">
+              <span className="mood-insight-label">Mood insight:</span>
+              <span className="mood-insight-value">{detectedMood}</span>
+              <span className="mood-insight-status">(learning)</span>
+            </div>
+          </div>
+
+          {/* Audio Visualization Circle */}
+          <div className="visualization-container">
+            <div className={`visualization-circle ${isListening ? 'active' : ''}`}></div>
+            
+            {/* Audio Bars */}
+            {isListening && (
+              <div className="audio-bars-container">
+                {Array.from({ length: 30 }).map((_, i) => (
+                  <div key={i} className="chat-audio-bar"></div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Instruction Text */}
+          <p className="instruction-text">
+            {inputMode === 'text' 
+              ? 'You can start whenever you feel ready.' 
+              : isListening 
+                ? 'Listening...' 
+                : 'You can start whenever you feel ready.'}
+          </p>
+
+          {/* Text Input (when in text mode) */}
+          {inputMode === 'text' && (
+            <form onSubmit={handleTextSubmit} className="text-input-form">
+              <textarea
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                placeholder="Type your message here..."
+                className="text-input-field"
+                rows="3"
+                disabled={isProcessing}
+              />
+              <button 
+                type="submit" 
+                className="text-submit-button"
+                disabled={isProcessing || !textInput.trim()}
+              >
+                Send
+              </button>
+            </form>
           )}
-        </div>
+
+          {/* Control Buttons */}
+          <div className="control-buttons">
+            <button 
+              className={`control-button speaker-button ${isMuted ? 'muted' : ''}`}
+              onClick={toggleMute}
+              aria-label={isMuted ? 'Unmute' : 'Mute'}
+            >
+              {isMuted ? '🔇' : '🔊'}
+            </button>
+            <button
+              className={`control-button mic-button ${isListening ? 'active' : ''}`}
+              onClick={isListening ? stopListening : startListening}
+              aria-label={isListening ? 'Stop' : 'Start speaking'}
+              disabled={inputMode === 'text'}
+            >
+              🎤
+            </button>
+            <button
+              className={`control-button text-button ${inputMode === 'text' ? 'active' : ''}`}
+              onClick={() => setInputMode(inputMode === 'text' ? 'voice' : 'text')}
+              aria-label={inputMode === 'text' ? 'Switch to voice' : 'Switch to text'}
+            >
+              💬
+            </button>
+          </div>
+
+          {/* Error Display */}
+          {error && (
+            <div className="error-message">{error}</div>
+          )}
+
+          {/* Processing Indicator */}
+          {isProcessing && (
+            <div className="processing-indicator">Processing...</div>
+          )}
+
+          {/* Audio Playing Indicator */}
+          {isAudioPlaying && !isMuted && (
+            <div className="audio-playing-indicator" style={{
+              color: '#20b2aa',
+              fontSize: '0.9rem',
+              textAlign: 'center',
+              marginTop: '0.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem'
+            }}>
+              🔊 Playing response...
+            </div>
+          )}
+        </main>
+
       </div>
+
+      {/* Right-side Past Conversations Overlay */}
+      {showPastConversations && (
+        <div className="past-conversations-overlay">
+          <div className="past-conversations-panel gradient">
+            <div className="past-conversations-topbar">
+              <span className="past-conversations-title">Past Conversations</span>
+              <div className="past-conversations-topbar-icons">
+                <button
+                  className="topbar-icon-button"
+                  type="button"
+                  onClick={() => setShowPastConversations(false)}
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <button
+              className="new-conversation-button"
+              onClick={handleNewConversation}
+              type="button"
+            >
+              + New Conversation
+            </button>
+
+            <div className="past-conversations-list">
+              {conversations.length === 0 ? (
+                <div className="no-conversations">No past conversations yet</div>
+              ) : (
+                conversations.map((conversation, index) => (
+                  <div
+                    key={conversation.id}
+                    className={`conversation-list-item ${
+                      conversation.id === activeConversationId ? 'active' : ''
+                    }`}
+                  >
+                    <div
+                      className="conversation-item-main"
+                      onClick={() => {
+                        setActiveConversationId(conversation.id);
+                        setShowPastConversations(false);
+                      }}
+                    >
+                      <div className="conversation-list-number">
+                        {conversation.name || `Chat ${index + 1}`}
+                      </div>
+                      <div className="conversation-list-preview">
+                        {conversation.messages[conversation.messages.length - 1]?.text ||
+                          'Start talking to begin this chat'}
+                      </div>
+                    </div>
+                    <button
+                      className="conversation-rename-button"
+                      onClick={(e) => openRenameModal(conversation.id, e)}
+                      type="button"
+                      title="Rename conversation"
+                    >
+                      ✎
+                    </button>
+                    <button
+                      className="conversation-delete-button"
+                      onClick={(e) => handleDeleteConversation(conversation.id, e)}
+                      type="button"
+                      title="Delete conversation"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rename Conversation Modal */}
+      {renameModalOpen && (
+        <div className="rename-modal-backdrop" onClick={closeRenameModal}>
+          <div
+            className="rename-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="rename-modal-title">Rename conversation</h3>
+            <form onSubmit={handleRenameSubmit} className="rename-modal-form">
+              <input
+                type="text"
+                className="rename-modal-input"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                placeholder="Enter a name for this chat"
+                autoFocus
+              />
+              <div className="rename-modal-actions">
+                <button
+                  type="button"
+                  className="rename-modal-button secondary"
+                  onClick={closeRenameModal}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rename-modal-button primary"
+                  disabled={!renameValue.trim()}
+                >
+                  Save
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Audio Error Message */}
       {audioError && (

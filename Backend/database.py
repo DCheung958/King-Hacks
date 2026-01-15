@@ -44,12 +44,34 @@ else:
 try:
     from databases import Database
     import sqlalchemy
+    from urllib.parse import quote_plus
     
     # Database connection URL - can be overridden with environment variable
-    DATABASE_URL = os.getenv(
+    raw_db_url = os.getenv(
         "DATABASE_URL",
         "postgresql+asyncpg://postgres:Postgresql4Life!@localhost:5432/echocare_db"
     )
+    
+    # URL-encode the password if it contains special characters
+    # Parse the URL and encode the password part
+    if raw_db_url and "@" in raw_db_url:
+        # Split into protocol, auth, and rest
+        protocol_part = raw_db_url.split("://")[0] + "://"
+        rest = raw_db_url.split("://")[1]
+        
+        if "@" in rest:
+            auth_part, host_db = rest.split("@", 1)
+            if ":" in auth_part:
+                user, password = auth_part.split(":", 1)
+                # URL-encode the password to handle special characters like !
+                encoded_password = quote_plus(password)
+                DATABASE_URL = f"{protocol_part}{user}:{encoded_password}@{host_db}"
+            else:
+                DATABASE_URL = raw_db_url
+        else:
+            DATABASE_URL = raw_db_url
+    else:
+        DATABASE_URL = raw_db_url
     
     # Debug: Show if DATABASE_URL came from .env or default
     env_db_url = os.getenv("DATABASE_URL")
