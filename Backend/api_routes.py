@@ -16,6 +16,8 @@ from db_operations import (
     get_conversation_by_id,
     get_messages_by_conversation,
     get_voice_samples_by_user,
+    create_conversation,
+    create_message,
 )
 
 router = APIRouter(prefix="/api", tags=["database"])
@@ -48,6 +50,15 @@ class MessageResponse(BaseModel):
 class ConversationHistoryResponse(BaseModel):
     conversation: ConversationResponse
     messages: List[MessageResponse]
+
+class ConversationCreate(BaseModel):
+    user_id: str
+
+class MessageCreate(BaseModel):
+    conversation_id: str
+    role: str
+    text: str
+    emotion: Optional[str] = None
 
 
 # User endpoints
@@ -103,6 +114,18 @@ async def get_user_conversations(user_id: str, limit: int = 50):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching conversations: {str(e)}")
 
+@router.post("/conversations", response_model=ConversationResponse)
+async def create_conversation_endpoint(conv_data: ConversationCreate):
+    """Create a new conversation"""
+    try:
+        user_uuid = UUID(conv_data.user_id)
+        conv = await create_conversation(user_uuid)
+        return ConversationResponse(**conv)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user_id format")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating conversation: {str(e)}")
+
 @router.get("/conversations/{conversation_id}", response_model=ConversationResponse)
 async def get_conversation_endpoint(conversation_id: str):
     """Get conversation by ID"""
@@ -121,6 +144,28 @@ async def get_conversation_endpoint(conversation_id: str):
 
 
 # Message endpoints
+@router.post("/messages", response_model=MessageResponse)
+async def create_message_endpoint(message_data: MessageCreate):
+    """Create a new message in a conversation"""
+    try:
+        conv_uuid = UUID(message_data.conversation_id)
+        if message_data.role not in ["user", "assistant"]:
+            raise HTTPException(status_code=400, detail="Role must be 'user' or 'assistant'")
+        
+        msg = await create_message(
+            conversation_id=conv_uuid,
+            role=message_data.role,
+            text=message_data.text,
+            emotion=message_data.emotion
+        )
+        return MessageResponse(**msg)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid conversation_id format")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating message: {str(e)}")
+
 @router.get("/conversations/{conversation_id}/messages", response_model=ConversationHistoryResponse)
 async def get_conversation_messages(conversation_id: str, limit: int = 100):
     """Get all messages for a conversation (conversation history)"""

@@ -10,7 +10,7 @@ load_dotenv()
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://postgres:Postgresql4Life!@localhost:5432/echocare_db"
+    "postgresql+asyncpg://postgres:DCheung6@localhost:5432/echocare_db"
 )
 
 

@@ -34,7 +34,7 @@ CREATE DATABASE echocare_db;
 
 ### 1.3 Create .env File (Optional if password matches default)
 
-**Note:** If your PostgreSQL password is `Postgresql4Life!`, you can skip this step. The backend will use the default connection string.
+**Note:** If your PostgreSQL password is `DCheung6`, you can skip this step. The backend will use the default connection string.
 
 **If your password is different**, create a file named `.env` in the `Backend` folder:
 

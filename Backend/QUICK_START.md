@@ -118,7 +118,7 @@ Visit `http://localhost:8000/docs` and use the interactive interface.
 
 ## Connection String
 
-Default: `postgresql+asyncpg://postgres:Postgresql4Life!@localhost:5432/echocare_db`
+Default: `postgresql+asyncpg://postgres:DCheung6@localhost:5432/echocare_db`
 
 To override, set environment variable:
 ```bash

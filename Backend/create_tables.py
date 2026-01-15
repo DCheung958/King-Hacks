@@ -42,6 +42,6 @@ async def create_tables():
 
 
 if __name__ == "__main__":
-    print(f"Creating tables using: {SYNC_DATABASE_URL.replace('Postgresql4Life!', '***')}")
+    print(f"Creating tables using: {SYNC_DATABASE_URL.replace('DCheung6', '***')}")
     asyncio.run(create_tables())
 
