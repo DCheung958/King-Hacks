@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { batchCloneVoice } from '../services/voiceService';
+import microphoneIcon from '../assets/microphone.svg';
 import './VoiceProfile.css';
 
 const VOICE_SAMPLES = [
@@ -30,8 +31,13 @@ const VoiceProfile = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [recordingConfirmed, setRecordingConfirmed] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [showUploadOption, setShowUploadOption] = useState(false);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   
   const mediaRecorderRef = useRef(null);
+  const fileInputRef = useRef(null);
   const streamRef = useRef(null);
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
@@ -204,6 +210,8 @@ const VoiceProfile = () => {
     setIsPlaying(false);
     setIsPaused(false);
     setRecordingConfirmed(false);
+    setUploadedFile(null);
+    setShowUploadOption(false);
     // Clear current recording
     if (isFreeSpeechStep) {
       setFreeSpeechRecording(null);
@@ -211,6 +219,10 @@ const VoiceProfile = () => {
       const newRecordings = [...recordings];
       newRecordings[currentStep] = undefined;
       setRecordings(newRecordings);
+    }
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -299,8 +311,52 @@ const VoiceProfile = () => {
         
         // Store voice_id and voice name if cloning was successful
         if (result.voiceId) {
-          localStorage.setItem('voice_id', result.voiceId);
-          localStorage.setItem('voice_name', profileName);
+          // Wait a moment for backend to save, then reload ALL profiles from database
+          const userId = localStorage.getItem('user_id');
+          if (userId) {
+            // Retry logic: wait and retry up to 3 times
+            let profiles = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+              await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1))); // 500ms, 1000ms, 1500ms
+              
+              try {
+                const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+                const response = await fetch(`${API_BASE_URL}/api/users/${userId}/voice-profiles`);
+                if (response.ok) {
+                  profiles = await response.json();
+                  if (profiles && profiles.length > 0) {
+                    // Update localStorage with ALL profiles from database (this includes the new one)
+                    localStorage.setItem('voice_profiles', JSON.stringify(profiles));
+                    // Find and set active profile
+                    const active = profiles.find(p => p.is_active) || profiles[0];
+                    if (active) {
+                      localStorage.setItem('voice_id', active.voice_id);
+                      localStorage.setItem('voice_name', active.voice_name);
+                    }
+                    console.log(`Successfully loaded ${profiles.length} voice profile(s) from database`);
+                    break; // Success, exit retry loop
+                  }
+                } else if (response.status === 404 && attempt < 2) {
+                  // 404 might mean backend is still saving, retry
+                  console.log(`Attempt ${attempt + 1}: Backend not ready, retrying...`);
+                  continue;
+                } else {
+                  console.error(`Failed to reload profiles from API: ${response.status} ${response.statusText}`);
+                  break; // Give up after 3 attempts or non-404 error
+                }
+              } catch (error) {
+                console.error(`Attempt ${attempt + 1}: Error reloading profiles:`, error);
+                if (attempt === 2) {
+                  // Last attempt failed
+                  console.error('Failed to reload profiles after 3 attempts. Profiles will sync on next login.');
+                }
+              }
+            }
+            
+            if (!profiles || profiles.length === 0) {
+              console.warn('Could not reload profiles from database. They will be available after you sign in again.');
+            }
+          }
         }
         
         // Navigate to selection page or chat after batch upload/clone
@@ -353,6 +409,70 @@ const VoiceProfile = () => {
     }
   };
 
+  const handleFileUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      setShowUploadOption(false);
+      return;
+    }
+
+    // Check if it's an audio file
+    const validTypes = ['audio/webm', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/m4a', 'audio/x-m4a'];
+    if (!validTypes.includes(file.type) && !file.name.match(/\.(webm|mp3|wav|ogg|m4a)$/i)) {
+      setError('Please upload a valid audio file (webm, mp3, wav, ogg, or m4a)');
+      setShowUploadOption(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
+
+    // Convert file to Blob and set it
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const blob = new Blob([e.target.result], { type: file.type || 'audio/webm' });
+      if (isFreeSpeechStep) {
+        setFreeSpeechRecording(blob);
+      } else {
+        const newRecordings = [...recordings];
+        newRecordings[currentStep] = blob;
+        setRecordings(newRecordings);
+      }
+      setUploadedFile(file.name);
+      setShowUploadOption(false);
+      setError(null);
+    };
+    reader.onerror = () => {
+      setError('Failed to read file. Please try again.');
+      setShowUploadOption(false);
+    };
+    reader.readAsArrayBuffer(file);
+    
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+
+  const handleExit = () => {
+    if (recordings.some(r => r !== undefined) || freeSpeechRecording || uploadedFile) {
+      setShowExitConfirm(true);
+    } else {
+      navigate('/chat');
+    }
+  };
+
+  const confirmExit = () => {
+    setShowExitConfirm(false);
+    navigate('/chat');
+  };
+
+  const cancelExit = () => {
+    setShowExitConfirm(false);
+  };
+
   const handleSkipFreeSpeech = async () => {
     // Skip free speech and batch upload/clone required samples
     try {
@@ -384,8 +504,8 @@ const VoiceProfile = () => {
     }
   };
 
-  // Can proceed if we have a recording for the current step, it's confirmed, and we're not currently recording or playing
-  const hasRecording = isFreeSpeechStep ? freeSpeechRecording !== null : recordings[currentStep] !== undefined;
+  // Can proceed if we have a recording for the current step (either recorded or uploaded), it's confirmed, and we're not currently recording or playing
+  const hasRecording = isFreeSpeechStep ? (freeSpeechRecording !== null || uploadedFile !== null) : (recordings[currentStep] !== undefined || uploadedFile !== null);
   const canProceed = hasRecording && recordingConfirmed && !isRecording && !isPlaying;
 
   // Show name input step first
@@ -442,6 +562,29 @@ const VoiceProfile = () => {
   return (
     <div className="voice-profile-page">
       <div className="voice-profile-container">
+        {/* Exit Button */}
+        <button className="exit-button" onClick={handleExit} title="Exit">
+          ✕
+        </button>
+
+        {/* Exit Confirmation Modal */}
+        {showExitConfirm && (
+          <div className="modal-overlay" onClick={cancelExit}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <h3>Are you sure?</h3>
+              <p>Changes made will not be saved. Do you want to exit?</p>
+              <div className="modal-buttons">
+                <button className="modal-cancel-button" onClick={cancelExit}>
+                  Cancel
+                </button>
+                <button className="modal-confirm-button" onClick={confirmExit}>
+                  Exit
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Progress Header */}
         <div className="progress-header">
           <span className="progress-text">
@@ -479,8 +622,41 @@ const VoiceProfile = () => {
         {isFreeSpeechStep && (
           <div className="text-sample-box free-speech-box">
             <p className="free-speech-instruction">
-              🎤 Speak naturally about anything that comes to mind—your day, your thoughts, your feelings, or whatever feels comfortable. There's no script to follow, just be yourself.
+              <img src={microphoneIcon} alt="Microphone" className="inline-mic-icon" /> Speak naturally about anything that comes to mind—your day, your thoughts, your feelings, or whatever feels comfortable. There's no script to follow, just be yourself.
             </p>
+          </div>
+        )}
+
+        {/* File Upload Option */}
+        {!isRecording && !hasRecording && (
+          <div className="upload-section">
+            <button 
+              className="upload-button" 
+              onClick={() => setShowUploadOption(!showUploadOption)}
+            >
+              <span className="upload-icon">📁</span>
+              Upload Voice Recording
+            </button>
+            {showUploadOption && (
+              <div className="upload-options">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="audio/webm,audio/mp3,audio/wav,audio/ogg,audio/m4a"
+                  onChange={handleFileUpload}
+                  className="file-input"
+                  id="voice-file-input"
+                />
+                <label htmlFor="voice-file-input" className="file-input-label">
+                  Choose audio file...
+                </label>
+              </div>
+            )}
+            {uploadedFile && (
+              <p className="uploaded-file-info">
+                ✓ Uploaded: {uploadedFile}
+              </p>
+            )}
           </div>
         )}
 
@@ -544,12 +720,12 @@ const VoiceProfile = () => {
           ) : (
             <>
               <button className="mic-button" onClick={startRecording}>
-                <span className="mic-icon">🎤</span>
+                <img src={microphoneIcon} alt="Microphone" className="mic-icon" />
               </button>
               <p className="recording-instruction">
                 {isFreeSpeechStep
-                  ? 'Tap the microphone to start your free speech recording'
-                  : 'Tap the microphone to start recording'}
+                  ? 'Tap the microphone to start your free speech recording or upload a file'
+                  : 'Tap the microphone to start recording or upload a file'}
               </p>
             </>
           )}

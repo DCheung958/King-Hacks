@@ -26,7 +26,7 @@ The test suite verifies 4 critical features:
 - Crisis detection triggers correctly
 - AI response is completely overridden
 - Safe response with crisis resources provided
-- No Flan-T5 output leaks through
+- No AI model output leaks through
 
 **Test Message:**
 ```

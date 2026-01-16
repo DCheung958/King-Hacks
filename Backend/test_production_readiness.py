@@ -25,7 +25,7 @@ async def test_crisis_override():
     
     Expected:
     - AI response is completely overridden
-    - No Flan-T5 output leaks through
+    - No AI model output leaks through
     - Calm, supportive language
     - Encourages external help
     - Logged as Critical/High
@@ -58,7 +58,7 @@ async def test_crisis_override():
             print(f"\n📥 Received response ({len(ai_response)} chars):")
             print(f"   {ai_response[:200]}...")
             
-            # Check 1: Response should be overridden (not Flan-T5 style)
+            # Check 1: Response should be overridden (not AI model style)
             crisis_indicators = [
                 "crisis",
                 "helpline",
@@ -104,7 +104,7 @@ async def test_crisis_override():
             if passed:
                 print(f"\n✅ PASSED: Crisis override working correctly!")
                 print(f"   Response is overridden with crisis resources")
-                print(f"   No Flan-T5 output leaking through")
+                print(f"   No AI model output leaking through")
                 TEST_RESULTS["crisis_override"]["passed"] = True
                 TEST_RESULTS["crisis_override"]["details"] = "Crisis override working - safe response provided"
             else:

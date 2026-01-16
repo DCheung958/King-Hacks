@@ -1,4 +1,6 @@
 # Echocare Frontend
+Nathaniel Cheung and Darcy Cheung
+
 
 React frontend for the Echocare therapeutic conversation application, built with Vite.
 

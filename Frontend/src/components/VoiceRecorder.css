@@ -1,0 +1,10 @@
+/* Microphone icon styles */
+.voice-recorder-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 0.5rem;
+  filter: brightness(0) saturate(100%) invert(42%) sepia(98%) saturate(1232%) hue-rotate(140deg) brightness(95%) contrast(87%);
+}
+

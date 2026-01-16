@@ -49,27 +49,34 @@ export async function uploadVoiceSample(audioBlob, userId = null) {
  * @returns {Promise<{message: string, voice_id: string, filenames: string[], total_samples: number}>}
  */
 export async function batchCloneVoice(audioBlobs, userId = null, voiceName = null) {
-  try {
-    const formData = new FormData();
-    
-    // Add all files to form data
-    audioBlobs.forEach((blob, index) => {
-      formData.append('files', blob, `recording_${index}.webm`);
-    });
-    
-    if (userId) {
-      formData.append('user_id', userId);
-    }
-    
-    if (voiceName) {
-      formData.append('voice_name', voiceName);
-    }
+  const formData = new FormData();
+  
+  // Add all files to form data
+  audioBlobs.forEach((blob, index) => {
+    formData.append('files', blob, `recording_${index}.webm`);
+  });
+  
+  if (userId) {
+    formData.append('user_id', userId);
+  }
+  
+  if (voiceName) {
+    formData.append('voice_name', voiceName);
+  }
 
+  // Create abort controller for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout (2 minutes)
+  
+  try {
     const response = await fetch(`${API_BASE_URL}/api/voice-clone-batch`, {
       method: 'POST',
       body: formData,
+      signal: controller.signal, // Add timeout signal
       // Don't set Content-Type header - browser will set it with boundary
     });
+    
+    clearTimeout(timeoutId); // Clear timeout if request completes
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
@@ -84,6 +91,10 @@ export async function batchCloneVoice(audioBlobs, userId = null, voiceName = nul
       totalSamples: data.total_samples
     };
   } catch (error) {
+    clearTimeout(timeoutId); // Make sure to clear timeout
+    if (error.name === 'AbortError') {
+      throw new Error('Voice cloning request timed out. Please try again with fewer samples or check your connection.');
+    }
     console.error('Failed to batch clone voice:', error);
     throw error;
   }

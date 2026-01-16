@@ -1,5 +1,5 @@
 try:
-    from sqlalchemy import Table, Column, String, DateTime, Text, ForeignKey, Index
+    from sqlalchemy import Table, Column, String, DateTime, Text, ForeignKey, Index, Boolean
     from sqlalchemy.dialects.postgresql import UUID
     from datetime import datetime
     from database import metadata
@@ -32,6 +32,19 @@ try:
         Index("idx_voice_samples_uploaded_at", "uploaded_at"),
     )
     
+    voice_profiles = Table(
+        "voice_profiles",
+        metadata,
+        Column("id", UUID(as_uuid=True), primary_key=True),
+        Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        Column("voice_id", String(255), nullable=False),  # ElevenLabs voice ID
+        Column("voice_name", String(255), nullable=False),
+        Column("is_active", Boolean, default=False, nullable=False),  # Only one active per user
+        Column("created_at", DateTime, default=datetime.utcnow, nullable=False),
+        Index("idx_voice_profiles_user_id", "user_id"),
+        Index("idx_voice_profiles_user_active", "user_id", "is_active"),
+    )
+    
     conversations = Table(
         "conversations",
         metadata,
@@ -59,5 +72,6 @@ except (ImportError, TypeError, AttributeError):
     # Database packages not available - define as None
     users = None
     voice_samples = None
+    voice_profiles = None
     conversations = None
     messages = None

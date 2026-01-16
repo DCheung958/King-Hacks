@@ -63,11 +63,16 @@ const SignUp = () => {
         localStorage.setItem('user_name', data.name);
       }
       
-      // Store voice profile if available (unlikely on signup, but handle it)
-      if (data.voice_id) {
+      // Store voice profiles if available (unlikely on signup, but handle it)
+      if (data.voice_profiles && Array.isArray(data.voice_profiles)) {
+        localStorage.setItem('voice_profiles', JSON.stringify(data.voice_profiles));
+        const activeProfile = data.voice_profiles.find(p => p.is_active) || data.voice_profiles[0];
+        if (activeProfile) {
+          localStorage.setItem('voice_id', activeProfile.voice_id);
+          localStorage.setItem('voice_name', activeProfile.voice_name);
+        }
+      } else if (data.voice_id && data.voice_name) {
         localStorage.setItem('voice_id', data.voice_id);
-      }
-      if (data.voice_name) {
         localStorage.setItem('voice_name', data.voice_name);
       }
 

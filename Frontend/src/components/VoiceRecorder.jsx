@@ -1,4 +1,6 @@
 import React, { useState, useRef } from 'react';
+import microphoneIcon from '../assets/microphone.svg';
+import './VoiceRecorder.css';
 
 const VoiceRecorder = ({ onRecordingComplete }) => {
   const [isRecording, setIsRecording] = useState(false);
@@ -63,7 +65,11 @@ const VoiceRecorder = ({ onRecordingComplete }) => {
         className={`record-button ${isRecording ? 'recording' : ''}`}
         onClick={isRecording ? stopRecording : startRecording}
       >
-        {isRecording ? '⏹️ Stop Recording' : '🎙️ Start Recording'}
+        {isRecording ? (
+          <>⏹️ Stop Recording</>
+        ) : (
+          <><img src={microphoneIcon} alt="Microphone" className="voice-recorder-icon" /> Start Recording</>
+        )}
       </button>
       {isRecording && (
         <div className="recording-status">

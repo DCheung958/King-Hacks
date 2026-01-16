@@ -73,9 +73,11 @@ export async function detectEmotion(text) {
  * Generate therapeutic response from user text
  * @param {string} userText - User input text
  * @param {string} [emotion] - Detected emotion (optional, will be detected if not provided)
+ * @param {string} [userId] - User ID (optional, for saving conversations)
+ * @param {string} [conversationId] - Conversation ID (optional, for saving conversations)
  * @returns {Promise<{emotion: string, responseText: string}>}
  */
-export async function generateResponse(userText, emotion = null) {
+export async function generateResponse(userText, emotion = null, userId = null, conversationId = null) {
   try {
     // Detect emotion if not provided
     let detectedEmotion = emotion;
@@ -84,16 +86,32 @@ export async function generateResponse(userText, emotion = null) {
       detectedEmotion = emotionData.emotion;
     }
 
+    // Build request body
+    const requestBody = { 
+      text: userText,
+      emotion: detectedEmotion 
+    };
+
+    // Add user_id and conversation_id as query parameters if provided
+    let url = `${API_BASE_URL}/api/respond`;
+    const params = new URLSearchParams();
+    if (userId) {
+      params.append('user_id', userId);
+    }
+    if (conversationId) {
+      params.append('conversation_id', conversationId);
+    }
+    if (params.toString()) {
+      url += `?${params.toString()}`;
+    }
+
     // Generate response from backend
-    const response = await fetch(`${API_BASE_URL}/api/respond`, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ 
-        text: userText,
-        emotion: detectedEmotion 
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {

@@ -4,7 +4,7 @@ This guide will walk you through setting up the entire Echocare project from scr
 
 ---
 
-## 📋 Prerequisites - What You Need to Install First
+##What You Need to Install First
 
 ### 1. Python (for Backend)
 - **Download:** https://www.python.org/downloads/
@@ -41,7 +41,7 @@ This guide will walk you through setting up the entire Echocare project from scr
 
 ---
 
-## 🗄️ Step 1: Set Up Database
+## Step 1: Set Up Database
 
 ### Option A: Using pgAdmin4 (Easier)
 
@@ -73,7 +73,7 @@ This guide will walk you through setting up the entire Echocare project from scr
 
 ---
 
-## 🔧 Step 2: Set Up Backend
+## Step 2: Set Up Backend
 
 ### 2.1 Navigate to Backend Folder
 ```bash
@@ -85,7 +85,7 @@ cd Backend
 pip install -r requirements.txt
 ```
 
-**⏱️ This may take 5-10 minutes** (installs packages like PyTorch, transformers, etc.)
+**This may take 5-10 minutes** (installs packages like PyTorch, transformers, etc.)
 
 ### 2.3 Create .env File
 
@@ -143,11 +143,11 @@ cd Frontend
 npm install
 ```
 
-**⏱️ This may take 2-5 minutes**
+** This may take 2-5 minutes**
 
 ---
 
-## 🚀 Step 4: Run the Application
+##  Step 4: Run the Application
 
 ### You Need TWO Terminal Windows Open
 
@@ -168,7 +168,7 @@ npm install
    INFO:     Uvicorn running on http://0.0.0.0:8000
    ```
 
-4. **✅ Keep this terminal open!** The backend must stay running.
+4. **Keep this terminal open!** The backend must stay running.
 
 5. **Test it:** Open browser → `http://localhost:8000/health`
    - Should show: `{"status":"healthy","upload_dir_exists":true}`
@@ -190,7 +190,7 @@ npm install
    Local:   http://localhost:5173
    ```
 
-4. **✅ Keep this terminal open too!**
+4. **Keep this terminal open too!**
 
 5. **Open in browser:** `http://localhost:5173`
 
@@ -207,7 +207,7 @@ npm install
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### "Failed to fetch" Error
 
@@ -304,7 +304,7 @@ Once everything is set up, to run the project:
 
 ---
 
-## 📝 Important Files
+## Important Files
 
 - **`.env`** (Backend folder) - Contains database password (create this!)
 - **`requirements.txt`** (Backend) - Python packages needed
@@ -312,7 +312,7 @@ Once everything is set up, to run the project:
 
 ---
 
-## 🆘 Still Having Issues?
+## Still Having Issues?
 
 1. **Check all prerequisites are installed:**
    - Python: `python --version`
@@ -352,5 +352,5 @@ Once everything is set up, to run the project:
 
 ---
 
-**That's it! You should now have the full project running.** 🎉
+**That's it! You should now have the full project running.** 
 

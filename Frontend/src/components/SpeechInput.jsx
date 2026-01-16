@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import microphoneIcon from '../assets/microphone.svg';
+import './SpeechInput.css';
 
 const SpeechInput = ({ onFinalTranscript }) => {
   const [isListening, setIsListening] = useState(false);
@@ -87,7 +89,11 @@ const SpeechInput = ({ onFinalTranscript }) => {
         className={`speech-button ${isListening ? 'listening' : ''}`}
         onClick={isListening ? stopListening : startListening}
       >
-        {isListening ? '🛑 Stop Listening' : '🎤 Start Listening'}
+        {isListening ? (
+          <>🛑 Stop Listening</>
+        ) : (
+          <><img src={microphoneIcon} alt="Microphone" className="speech-input-icon" /> Start Listening</>
+        )}
       </button>
       {interimTranscript && (
         <p className="interim-transcript">{interimTranscript}</p>

@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { detectEmotion, generateResponse } from '../services/chatService';
 import { synthesizeSpeech } from '../services/ttsService';
 import VoiceProfileSelection from './VoiceProfileSelection';
+import microphoneIcon from '../assets/microphone.svg';
 import './Chat.css';
 
 const Chat = () => {
@@ -34,6 +35,7 @@ const Chat = () => {
   const [renameModalOpen, setRenameModalOpen] = useState(false);
   const [renameConversationId, setRenameConversationId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
+  const [userId, setUserId] = useState(() => localStorage.getItem('user_id')); // Track user_id in state
   
   const recognitionRef = useRef(null);
   const streamRef = useRef(null);
@@ -41,26 +43,161 @@ const Chat = () => {
   const analyserRef = useRef(null);
   const animationFrameRef = useRef(null);
   const audioRef = useRef(null);
+  const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
 
-  // Load conversations from localStorage on mount
+  // Monitor user_id changes and reload conversations when user signs in
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('echocare_conversations');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.conversations && Array.isArray(parsed.conversations) && parsed.conversations.length > 0) {
-          setConversations(parsed.conversations);
-          setActiveConversationId(
-            parsed.activeConversationId ||
-            parsed.conversations[0]?.id ||
-            1
+    const checkUserId = () => {
+      const currentUserId = localStorage.getItem('user_id');
+      if (currentUserId !== userId) {
+        setUserId(currentUserId);
+      }
+    };
+    
+    // Check immediately
+    checkUserId();
+    
+    // Check periodically (for same-tab login)
+    const interval = setInterval(checkUserId, 500);
+    
+    // Listen for storage events (for cross-tab login)
+    const handleStorageChange = (e) => {
+      if (e.key === 'user_id') {
+        setUserId(e.newValue);
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [userId]);
+
+  // Load conversations from database (when user is logged in or when user_id changes)
+  useEffect(() => {
+    const loadConversations = async () => {
+      if (!userId) {
+        // No user logged in - load from localStorage only
+        try {
+          const stored = localStorage.getItem('echocare_conversations');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed.conversations && Array.isArray(parsed.conversations) && parsed.conversations.length > 0) {
+              setConversations(parsed.conversations);
+              setActiveConversationId(
+                parsed.activeConversationId ||
+                parsed.conversations[0]?.id ||
+                1
+              );
+            }
+          }
+        } catch (e) {
+          console.error('Failed to load conversations from localStorage', e);
+        }
+        return;
+      }
+
+      // User is logged in - load from database
+      try {
+        // Fetch conversations from database
+        const response = await fetch(`${API_BASE_URL}/api/users/${userId}/conversations`);
+        
+        if (response.ok) {
+          const dbConversations = await response.json();
+          
+          // Load messages for each conversation
+          const conversationsWithMessages = await Promise.all(
+            dbConversations.map(async (conv, index) => {
+              try {
+                const messagesResponse = await fetch(
+                  `${API_BASE_URL}/api/conversations/${conv.id}/messages?limit=100`
+                );
+                
+                if (messagesResponse.ok) {
+                  const messagesData = await messagesResponse.json();
+                  const messages = messagesData.messages.map(msg => ({
+                    id: msg.id,
+                    role: msg.role,
+                    text: msg.text,
+                    emotion: msg.emotion
+                  }));
+                  
+                  return {
+                    id: Date.now() + Math.random(), // Local ID for UI
+                    dbId: conv.id, // Database conversation ID
+                    name: `Chat ${index + 1}`, // Use sequential numbering
+                    messages: messages || []
+                  };
+                }
+                
+                return {
+                  id: Date.now() + Math.random(),
+                  dbId: conv.id,
+                  name: `Chat ${index + 1}`, // Use sequential numbering
+                  messages: []
+                };
+              } catch (err) {
+                console.error(`Failed to load messages for conversation ${conv.id}:`, err);
+                return {
+                  id: Date.now() + Math.random(),
+                  dbId: conv.id,
+                  name: `Chat ${index + 1}`, // Use sequential numbering
+                  messages: []
+                };
+              }
+            })
           );
+
+          if (conversationsWithMessages.length > 0) {
+            setConversations(conversationsWithMessages);
+            setActiveConversationId(conversationsWithMessages[0].id);
+          } else {
+            // No conversations in database - create a new one
+            await handleNewConversation();
+          }
+        } else {
+          console.warn('Failed to load conversations from database, falling back to localStorage');
+          // Fallback to localStorage
+          const stored = localStorage.getItem('echocare_conversations');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed.conversations && Array.isArray(parsed.conversations) && parsed.conversations.length > 0) {
+              setConversations(parsed.conversations);
+              setActiveConversationId(
+                parsed.activeConversationId ||
+                parsed.conversations[0]?.id ||
+                1
+              );
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error loading conversations from database:', error);
+        // Fallback to localStorage
+        try {
+          const stored = localStorage.getItem('echocare_conversations');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed.conversations && Array.isArray(parsed.conversations) && parsed.conversations.length > 0) {
+              setConversations(parsed.conversations);
+              setActiveConversationId(
+                parsed.activeConversationId ||
+                parsed.conversations[0]?.id ||
+                1
+              );
+            }
+          }
+        } catch (e) {
+          console.error('Failed to load conversations from localStorage', e);
         }
       }
-    } catch (e) {
-      console.error('Failed to load conversations from localStorage', e);
-    }
-  }, []);
+    };
+
+    loadConversations();
+  }, [userId]); // Reload when user_id changes
 
   // Persist conversations to localStorage
   useEffect(() => {
@@ -75,13 +212,69 @@ const Chat = () => {
     }
   }, [conversations, activeConversationId]);
 
+  // Load messages when switching to a conversation (if not already loaded)
+  useEffect(() => {
+    const loadMessagesForActiveConversation = async () => {
+      const userId = localStorage.getItem('user_id');
+      if (!userId) return; // Only load from database if user is logged in
+
+      const currentConv = conversations.find(conv => conv.id === activeConversationId);
+      
+      // If conversation has dbId but no messages (or empty messages), load from database
+      if (currentConv && currentConv.dbId && (!currentConv.messages || currentConv.messages.length === 0)) {
+        try {
+          const messagesResponse = await fetch(
+            `${API_BASE_URL}/api/conversations/${currentConv.dbId}/messages?limit=100`
+          );
+          
+          if (messagesResponse.ok) {
+            const messagesData = await messagesResponse.json();
+            const messages = messagesData.messages.map(msg => ({
+              id: msg.id,
+              role: msg.role,
+              text: msg.text,
+              emotion: msg.emotion
+            }));
+            
+            // Update conversation with messages (only if still on the same conversation)
+            setConversations(prev => {
+              const currentConvAfterUpdate = prev.find(conv => conv.id === activeConversationId);
+              // Only update if messages still missing (prevent race conditions)
+              if (currentConvAfterUpdate && (!currentConvAfterUpdate.messages || currentConvAfterUpdate.messages.length === 0)) {
+                return prev.map(conv =>
+                  conv.id === activeConversationId
+                    ? { ...conv, messages: messages }
+                    : conv
+                );
+              }
+              return prev;
+            });
+          }
+        } catch (error) {
+          console.error(`Failed to load messages for conversation ${currentConv.dbId}:`, error);
+        }
+      }
+    };
+
+    loadMessagesForActiveConversation();
+  }, [activeConversationId]); // Only depend on activeConversationId to avoid loops
+
   // Check if user has cloned their voice and get voice name
   useEffect(() => {
     const voiceId = localStorage.getItem('voice_id');
     const storedVoiceName = localStorage.getItem('voice_name');
-    setHasVoiceCloned(!!voiceId);
-    setVoiceName(storedVoiceName);
+    setHasVoiceCloned(!!voiceId && !!storedVoiceName);
+    // Only set voiceName if it's not empty/null
+    setVoiceName(storedVoiceName && storedVoiceName.trim() ? storedVoiceName : null);
   }, [showVoiceProfileModal]); // Refresh when modal closes
+
+  // Also check on mount
+  useEffect(() => {
+    const voiceId = localStorage.getItem('voice_id');
+    const storedVoiceName = localStorage.getItem('voice_name');
+    setHasVoiceCloned(!!voiceId && !!storedVoiceName);
+    setVoiceName(storedVoiceName && storedVoiceName.trim() ? storedVoiceName : null);
+  }, []); // Run on mount
 
   // Reset modal state when returning to chat page
   useEffect(() => {
@@ -321,8 +514,52 @@ const Chat = () => {
         .join(' ');
       setDetectedMood(emotionName);
 
-      // Generate assistant response
-      const response = await generateResponse(text.trim(), emotionData.emotion);
+      // Get user_id and conversation_id for saving to database
+      const userId = localStorage.getItem('user_id');
+      let conversationId = null;
+      
+      // Get the current conversation using functional update to ensure we have the latest state
+      let currentConversation = null;
+      setConversations(prevConvs => {
+        currentConversation = prevConvs.find(conv => conv.id === activeConversationId);
+        return prevConvs; // Don't modify, just read the latest state
+      });
+      
+      // If conversation doesn't have a dbId and user is logged in, create it in database
+      if (currentConversation && !currentConversation.dbId && userId) {
+        try {
+          const createResponse = await fetch(`${API_BASE_URL}/api/users/${userId}/conversations`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (createResponse.ok) {
+            const dbConversation = await createResponse.json();
+            conversationId = dbConversation.id;
+            
+            // Update conversation with dbId
+            setConversations(prevConvs =>
+              prevConvs.map(conv =>
+                conv.id === activeConversationId
+                  ? { ...conv, dbId: dbConversation.id }
+                  : conv
+              )
+            );
+          } else {
+            console.warn('Failed to create conversation in database, continuing without dbId');
+          }
+        } catch (err) {
+          console.error('Failed to create conversation in database:', err);
+          // Continue without dbId - conversation will still work locally
+        }
+      } else {
+        conversationId = currentConversation?.dbId || null;
+      }
+
+      // Generate assistant response (with user_id and conversation_id for saving)
+      const response = await generateResponse(text.trim(), emotionData.emotion, userId, conversationId);
       
       // Add assistant message
       const assistantMessage = {
@@ -383,7 +620,7 @@ const Chat = () => {
     } finally {
       setIsProcessing(false);
     }
-  }, [activeConversationId, setConversations]);
+  }, [activeConversationId]); // Remove conversations from deps - we use functional updates to get latest state
 
   const toggleMute = () => {
     setIsMuted(!isMuted);
@@ -392,11 +629,67 @@ const Chat = () => {
     }
   };
 
-  const handleNewConversation = () => {
-    const newIndex = conversations.length + 1;
+  const formatConversationName = (dateString) => {
+    const convDate = new Date(dateString);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    if (convDate.toDateString() === today.toDateString()) {
+      return `Today ${convDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    } else if (convDate.toDateString() === yesterday.toDateString()) {
+      return `Yesterday ${convDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    } else {
+      return convDate.toLocaleDateString([], { 
+        month: 'short', 
+        day: 'numeric', 
+        year: convDate.getFullYear() !== today.getFullYear() ? 'numeric' : undefined 
+      }) + ` ${convDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+  };
+
+  const handleNewConversation = async () => {
+    const userId = localStorage.getItem('user_id');
+    
+    // Create conversation in database if user is logged in
+    let dbConversationId = null;
+    // Use simple "Chat X" naming for new conversations
+    const chatNumber = conversations.length + 1;
+    let conversationName = `Chat ${chatNumber}`;
+    
+    if (userId) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/users/${userId}/conversations`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          const dbConversation = await response.json();
+          dbConversationId = dbConversation.id;
+          // Keep simple "Chat X" name for new conversations
+          conversationName = `Chat ${chatNumber}`;
+        } else {
+          console.warn('Failed to create conversation in database, will create locally only');
+          // Keep simple "Chat X" name
+          conversationName = `Chat ${chatNumber}`;
+        }
+      } catch (error) {
+        console.error('Error creating conversation in database:', error);
+        // Keep simple "Chat X" name
+        conversationName = `Chat ${chatNumber}`;
+      }
+    } else {
+      // No user logged in - use simple "Chat X" name
+      conversationName = `Chat ${chatNumber}`;
+    }
+
     const newConversation = {
-      id: Date.now(),
-      name: `Chat ${newIndex}`,
+      id: Date.now() + Math.random(),
+      dbId: dbConversationId, // Database conversation ID (if created)
+      name: conversationName,
       messages: []
     };
 
@@ -469,6 +762,13 @@ const Chat = () => {
 
   const messages = currentConversation.messages || [];
 
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    if (messagesContainerRef.current && messages.length > 0) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
+  }, [messages.length, activeConversationId]);
+
   return (
     <div className="chat-page-new">
       {/* Header */}
@@ -480,13 +780,31 @@ const Chat = () => {
               <h1 className="app-title">Echocare</h1>
               <p className="app-subtitle">Your personal therapy companion</p>
             </div>
-            <button 
-              className="voice-profile-button"
-              onClick={() => setShowVoiceProfileModal(true)}
-              title={voiceName ? "Manage your voice profile" : "Set up your voice profile"}
-            >
-              {voiceName || "Set Up Voice Profile"}
-            </button>
+            <div className="voice-profile-button-wrapper">
+              <button 
+                className="voice-profile-button"
+                onClick={() => setShowVoiceProfileModal(!showVoiceProfileModal)}
+                title={voiceName ? "Manage your voice profile" : "Set up your voice profile"}
+              >
+                {voiceName && voiceName.trim() ? voiceName : "Set up voice profile"}
+              </button>
+              {showVoiceProfileModal && (
+                <VoiceProfileSelection
+                  onClose={() => {
+                    setShowVoiceProfileModal(false);
+                    // Refresh voice profile info
+                    const voiceId = localStorage.getItem('voice_id');
+                    const storedVoiceName = localStorage.getItem('voice_name');
+                    setHasVoiceCloned(!!voiceId && !!storedVoiceName);
+                    setVoiceName(storedVoiceName && storedVoiceName.trim() ? storedVoiceName : null);
+                  }}
+                  onNavigateToSetup={() => {
+                    setShowVoiceProfileModal(false);
+                    navigate('/voice-profile', { state: { isNewProfile: true } });
+                  }}
+                />
+              )}
+            </div>
           </div>
         </div>
         <div className="header-icons">
@@ -514,26 +832,29 @@ const Chat = () => {
                 className="clone-voice-button"
                 title="Clone your voice to hear responses in your own voice"
               >
-                🎤 Clone Voice
+                <img src={microphoneIcon} alt="Microphone" className="clone-voice-icon" /> Clone Voice
               </button>
             )}
           </div>
-          <div className="conversation-messages">
+          <div className="conversation-messages" ref={messagesContainerRef}>
             {messages.length === 0 ? (
               <div className="empty-conversation">
                 <p>Your conversation will appear here</p>
               </div>
             ) : (
-              messages.map(message => (
-                <div 
-                  key={message.id} 
-                  className={`conversation-message ${message.role}`}
-                >
-                  <div className="message-content">
-                    {message.text}
+              <>
+                {messages.map(message => (
+                  <div 
+                    key={message.id} 
+                    className={`conversation-message ${message.role}`}
+                  >
+                    <div className="message-content">
+                      {message.text}
+                    </div>
                   </div>
-                </div>
-              ))
+                ))}
+                <div ref={messagesEndRef} />
+              </>
             )}
           </div>
         </section>
@@ -610,7 +931,7 @@ const Chat = () => {
               aria-label={isListening ? 'Stop' : 'Start speaking'}
               disabled={inputMode === 'text'}
             >
-              🎤
+              <img src={microphoneIcon} alt="Microphone" className="chat-mic-icon" />
             </button>
             <button
               className={`control-button text-button ${inputMode === 'text' ? 'active' : ''}`}
@@ -658,12 +979,12 @@ const Chat = () => {
               <span className="past-conversations-title">Past Conversations</span>
               <div className="past-conversations-topbar-icons">
                 <button
-                  className="topbar-icon-button"
+                  className="topbar-exit-button"
                   type="button"
                   onClick={() => setShowPastConversations(false)}
-                  title="Close"
+                  title="Exit"
                 >
-                  ✕
+                  Exit
                 </button>
               </div>
             </div>
@@ -837,23 +1158,6 @@ const Chat = () => {
         />
       )}
 
-      {/* Voice Profile Selection Modal */}
-      {showVoiceProfileModal && (
-        <VoiceProfileSelection
-          onClose={() => {
-            setShowVoiceProfileModal(false);
-            // Refresh voice profile info
-            const voiceId = localStorage.getItem('voice_id');
-            const storedVoiceName = localStorage.getItem('voice_name');
-            setHasVoiceCloned(!!voiceId);
-            setVoiceName(storedVoiceName);
-          }}
-          onNavigateToSetup={() => {
-            setShowVoiceProfileModal(false); // Close modal first
-            navigate('/voice-profile', { state: { isNewProfile: true } });
-          }}
-        />
-      )}
     </div>
   );
 };

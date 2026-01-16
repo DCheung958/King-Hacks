@@ -4,7 +4,7 @@
 
 This update implements three major enhancements:
 1. **Priority 1: Crisis Safety Layer** - Fast win for ethical/legal protection
-2. **Model Upgrade: DialoGPT → Flan-T5-Large** - Better response quality
+2. **Model Upgrade: Flan-T5-Large → Llama 3.1 8B Instruct** - Better response quality and instruction following
 3. **Priority 3: Prosody-Aware Voice Synthesis** - Emotion-matched voice output
 
 ---
@@ -53,58 +53,66 @@ See `Backend/CRISIS_SAFETY.md` for complete details.
 
 ---
 
-## 🤖 Model Upgrade: DialoGPT → Flan-T5-Large
+## 🤖 Model Upgrade: Flan-T5-Large → Llama 3.1 8B Instruct
 
 ### What Changed
 
 **File:** `Backend/response_model.py`
 
-- **Old Model:** `microsoft/DialoGPT-medium` (863MB, conversational)
-- **New Model:** `google/flan-t5-large` (Text-to-text, better instruction following)
+- **Old Model:** `google/flan-t5-large` (Text-to-text, instruction following)
+- **New Model:** `meta-llama/Llama-3.1-8b-Instruct` (~16GB, instruction-tuned LLM)
 
-### Why Flan-T5-Large?
+### Why Llama 3.1 8B Instruct?
 
-1. **Better Instruction Following:**
-   - Flan-T5 is trained on instruction-following tasks
+1. **Superior Instruction Following:**
+   - Llama 3.1 is instruction-tuned for dialogue and following complex instructions
    - Better at following therapeutic response guidelines
    - More consistent with safety requirements
+   - Advanced reasoning capabilities
 
-2. **Text-to-Text Architecture:**
-   - More predictable outputs
-   - Better control over response format
-   - Easier to integrate with safety wrappers
+2. **Chat-Optimized Architecture:**
+   - Native chat format support (system/user/assistant roles)
+   - Better conversation context understanding
+   - 8K token context window for longer conversations
+   - More natural dialogue generation
 
 3. **Maintained Features:**
    - All existing safety features work
    - Conversation memory integration
    - Speech-style mirroring
    - Therapeutic wrapper
+   - Persona and warmth controls
 
 ### Changes Made
 
 1. **Model Loading:**
    ```python
    # Old
-   from transformers import AutoModelForCausalLM
-   model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-medium")
-   
-   # New
    from transformers import T5ForConditionalGeneration
    model = T5ForConditionalGeneration.from_pretrained("google/flan-t5-large")
+   
+   # New
+   from transformers import AutoModelForCausalLM
+   model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.1-8b-Instruct")
    ```
 
 2. **Prompt Format:**
    ```python
-   # Old: Direct text encoding
-   inputs = tokenizer.encode(prompt + tokenizer.eos_token, ...)
-   
-   # New: Text-to-text format
+   # Old: Text-to-text format
    prompt = f"Provide a warm, empathetic therapeutic response to someone who says: '{user_text}'. Response:"
-   inputs = tokenizer(prompt, return_tensors="pt", ...)
+   
+   # New: Llama chat format with system/user/assistant roles
+   messages = [
+       {"role": "system", "content": system_instruction},
+       {"role": "user", "content": user_text},
+   ]
+   prompt = tokenizer.apply_chat_template(messages, tokenize=False)
    ```
 
 3. **Generation:**
-   - Updated generation parameters for T5 architecture
+   - Updated to use Llama's chat template
+   - Supports 8K token context window
+   - Optimized for GPU with 8-bit quantization
    - Maintained all safety and personalization features
 
 ### Backward Compatibility
@@ -175,7 +183,7 @@ const ttsResult = await synthesizeSpeech(
 - `Backend/UPDATE_SUMMARY.md` - This file
 
 ### Modified Files
-- `Backend/response_model.py` - Model upgrade to Flan-T5-Large
+- `Backend/response_model.py` - Model upgrade to Llama 3.1 8B Instruct
 - `Backend/main.py` - Crisis detection integration, prosody-aware synthesis
 - `Frontend/src/services/ttsService.js` - Emotion parameter support
 - `Frontend/src/pages/Chat.jsx` - Pass emotion to TTS
@@ -197,7 +205,7 @@ const ttsResult = await synthesizeSpeech(
    - Detect emotion
    - Get conversation summary
    - Get user style
-   - Generate response with Flan-T5-Large
+   - Generate response with Llama 3.1 8B Instruct
    - Apply therapeutic wrapper
    - Apply speech-style mirroring
 5. **Synthesize speech:**
@@ -219,7 +227,8 @@ const ttsResult = await synthesizeSpeech(
 - [ ] Verify crisis resources provided
 
 ### Model Upgrade
-- [ ] Verify Flan-T5-Large loads correctly
+- [ ] Verify Llama 3.1 8B Instruct loads correctly
+- [ ] Verify Hugging Face authentication works
 - [ ] Test response generation
 - [ ] Verify all safety features work
 - [ ] Verify conversation memory works
@@ -264,10 +273,12 @@ const ttsResult = await synthesizeSpeech(
    - Compliance required
 
 2. **Model Upgrade:**
-   - Flan-T5-Large is larger than DialoGPT-medium
-   - May require more memory
-   - First load may take longer
-   - Better quality expected
+   - Llama 3.1 8B Instruct is larger than Flan-T5-Large (~16GB vs ~3GB)
+   - Requires more memory (16GB RAM recommended)
+   - First load may take longer (model download + initialization)
+   - Requires Hugging Face account and model access
+   - Significantly better quality expected
+   - GPU acceleration highly recommended
 
 3. **Prosody:**
    - ElevenLabs API may vary
@@ -282,7 +293,7 @@ const ttsResult = await synthesizeSpeech(
 - [ ] Multi-language crisis detection
 - [ ] Context-aware crisis detection
 - [ ] Real-time crisis monitoring dashboard
-- [ ] Fine-tuned Flan-T5 for therapy
+- [ ] Fine-tuned Llama 3.1 for therapy
 - [ ] Advanced prosody learning from user feedback
 - [ ] Regional crisis resource customization
 

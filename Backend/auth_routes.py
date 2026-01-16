@@ -4,7 +4,8 @@ Authentication routes for login and signup
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict, Any
+from uuid import UUID
 
 # Check if database is available
 try:
@@ -52,6 +53,7 @@ class AuthResponse(BaseModel):
     name: Optional[str] = None
     voice_id: Optional[str] = None
     voice_name: Optional[str] = None
+    voice_profiles: Optional[List[Dict[str, Any]]] = None
 
 
 @router.post("/login", response_model=AuthResponse)
@@ -99,13 +101,45 @@ async def login(credentials: LoginRequest):
     # Password correct - create token
     access_token = create_access_token(data={"sub": str(user["id"]), "email": user["email"]})
     
+    # Get all voice profiles for the user
+    voice_profiles_list = []
+    active_profile = None
+    try:
+        from db_operations import get_voice_profiles_by_user, get_active_voice_profile
+        user_uuid = UUID(str(user["id"]))
+        profiles = await get_voice_profiles_by_user(user_uuid)
+        voice_profiles_list = [
+            {
+                "id": str(p["id"]),
+                "voice_id": p["voice_id"],
+                "voice_name": p["voice_name"],
+                "is_active": p["is_active"]
+            }
+            for p in profiles
+        ]
+        active = await get_active_voice_profile(user_uuid)
+        if active:
+            active_profile = {
+                "voice_id": active["voice_id"],
+                "voice_name": active["voice_name"]
+            }
+    except Exception as e:
+        print(f"Warning: Failed to load voice profiles: {e}")
+        # Fallback to old voice_id/voice_name from users table if no profiles found
+        if not voice_profiles_list and user.get("voice_id"):
+            active_profile = {
+                "voice_id": user.get("voice_id"),
+                "voice_name": user.get("voice_name")
+            }
+    
     return AuthResponse(
         access_token=access_token,
         user_id=str(user["id"]),
         email=user["email"],
         name=user.get("name"),
-        voice_id=user.get("voice_id"),
-        voice_name=user.get("voice_name")
+        voice_id=active_profile["voice_id"] if active_profile else user.get("voice_id"),
+        voice_name=active_profile["voice_name"] if active_profile else user.get("voice_name"),
+        voice_profiles=voice_profiles_list
     )
 
 
@@ -183,7 +217,8 @@ async def signup(credentials: SignupRequest):
             email=new_user["email"],
             name=new_user.get("name"),
             voice_id=new_user.get("voice_id"),
-            voice_name=new_user.get("voice_name")
+            voice_name=new_user.get("voice_name"),
+            voice_profiles=[]  # New users won't have voice profiles yet
         )
     except HTTPException:
         # Re-raise HTTP exceptions as-is

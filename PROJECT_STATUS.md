@@ -10,7 +10,7 @@
 |---------|--------|---------|
 | **ElevenLabs Integration** | ✅ **WORKING** | Real API integration, voice cloning & TTS |
 | **Hugging Face Emotion Model** | ✅ **WORKING** | High accuracy (0.997 avg confidence) |
-| **AI Response Generation** | ✅ **WORKING** | DialoGPT-medium (conversational AI) |
+| **AI Response Generation** | ✅ **WORKING** | Llama 3.1 8B Instruct (instruction-tuned LLM) |
 | **Database** | ✅ **IMPLEMENTED** | Full PostgreSQL schema, optional |
 | **API Server** | ✅ **RUNNING** | FastAPI with all endpoints |
 | **Voice Sample Upload** | ✅ **WORKING** | File upload & storage |
@@ -40,13 +40,13 @@
 
 ### 2. AI Response Generation ✅ WORKING
 
-**Status:** Fully functional with DialoGPT-medium
+**Status:** Fully functional with Llama 3.1 8B Instruct
 
 **Technology:**
-- Model: `microsoft/DialoGPT-medium` (863MB)
-- Type: Conversational AI (trained on Reddit dialogues)
-- Cost: FREE (runs locally)
-- Speed: ~5-10 seconds per response (CPU)
+- Model: `meta-llama/Llama-3.1-8b-Instruct` (~16GB)
+- Type: Instruction-tuned large language model (LLM)
+- Cost: FREE (runs locally, requires Hugging Face access)
+- Speed: Varies based on hardware (CPU/GPU)
 
 **API Endpoint:**
 - `POST /api/respond`
@@ -151,7 +151,7 @@
 - **AI Models:**
   - Hugging Face Transformers
   - PyTorch
-  - DialoGPT-medium (response generation)
+  - Llama 3.1 8B Instruct (response generation)
   - DistilBERT (emotion detection)
 
 ### Database (Optional)
@@ -171,7 +171,7 @@
 Backend/
 ├── main.py                 # FastAPI application (main entry point)
 ├── emotion_model.py        # Hugging Face emotion detection
-├── response_model.py       # DialoGPT-medium response generation
+├── response_model.py       # Llama 3.1 8B Instruct response generation
 ├── database.py             # Database connection
 ├── models.py               # SQLAlchemy table definitions
 ├── db_operations.py        # Database CRUD operations
@@ -249,9 +249,9 @@ All dependencies are listed in `requirements.txt`:
 - **Model Size:** ~268MB
 
 ### Response Generation
-- **Model:** DialoGPT-medium
-- **Size:** 863MB
-- **Response Time:** 5-10 seconds (first), faster after
+- **Model:** Llama 3.1 8B Instruct
+- **Size:** ~16GB
+- **Response Time:** Varies based on hardware (CPU/GPU)
 - **Variety:** High (different responses each time)
 
 ### Voice Processing
@@ -289,7 +289,7 @@ The system is designed for graceful degradation:
 ## 📝 Next Steps / Future Enhancements
 
 ### Potential Improvements:
-1. **Better Response Quality** - Fine-tune DialoGPT for therapy
+1. **Better Response Quality** - Fine-tune Llama 3.1 for therapy
 2. **Conversation Context** - Multi-turn conversation support
 3. **User Authentication** - JWT/auth middleware
 4. **Real-time Features** - WebSocket support

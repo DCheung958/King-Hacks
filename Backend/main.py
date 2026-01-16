@@ -59,6 +59,10 @@ except ImportError:
 
 @app.on_event("startup")
 async def startup():
+    # Fix OpenMP duplicate library warning on Windows
+    import os
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+    
     if DB_AVAILABLE and database:
         try:
             await database.connect()
@@ -286,6 +290,9 @@ async def generate_response(
     Generate empathetic therapeutic response (uses AI model if available, otherwise mock)
     Enhanced with conversation memory, therapeutic safety wrapper, and crisis detection
     """
+    import time
+    start_time = time.time()
+    
     if not req.text or not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
@@ -355,9 +362,9 @@ async def generate_response(
             print(f"Warning: Emotion detection failed: {e}. Using default emotion.")
             emotion = "calm"
     
-    # Get conversation summary if user_id and conversation_id provided
+    # Get conversation summary if user_id and conversation_id provided (quality over speed)
     conversation_summary = None
-    if user_id and conversation_id:
+    if user_id and conversation_id and not is_simple_query:
         try:
             from conversation_memory import get_conversation_summary
             user_uuid = uuid.UUID(user_id)
@@ -366,24 +373,47 @@ async def generate_response(
         except Exception as e:
             print(f"Warning: Failed to get conversation summary: {e}")
     
-    # Get user style context if user_id provided
+    # FAST PATH: For simple queries, skip expensive context loading to speed up response
+    # Simple queries are: short (< 80 chars), casual topics, no emotional intensity keywords
+    user_text_lower = req.text.strip().lower()
+    emotional_keywords = ["difficult", "struggling", "anxious", "depressed", "hurt", "suicide", "kill", "sad", "angry", "worried", "stressed", "overwhelmed", "pain", "suffering"]
+    simple_topic_indicators = ["want", "get", "buy", "need", "like", "thinking about", "considering"]
+    
+    # Simple query if: short text AND (has simple topic indicators OR no emotional keywords)
+    is_simple_query = (
+        len(req.text.strip()) < 80 and
+        (
+            any(indicator in user_text_lower for indicator in simple_topic_indicators) or
+            not any(keyword in user_text_lower for keyword in emotional_keywords)
+        )
+    )
+    
+    if is_simple_query:
+        print(f"🚀 Fast path: Simple query detected - skipping expensive context loading")
+    
+    # Get user style context if user_id provided (skip for simple queries to speed up)
     user_style = None
     recent_messages = None
     last_assistant_message = None
-    if user_id:
+    conversation_history = None  # Initialize to avoid NameError
+    if user_id and not is_simple_query:  # Skip for simple queries
         try:
+            db_start = time.time()
             from user_style_analyzer import get_user_speech_style, get_recent_user_messages
             from db_operations import get_messages_by_conversation
             user_uuid = uuid.UUID(user_id)
             conv_uuid = uuid.UUID(conversation_id) if conversation_id else None
-            user_style = await get_user_speech_style(user_uuid, limit_messages=30)
-            recent_messages = await get_recent_user_messages(user_uuid, conv_uuid, limit=3)
+            
+            # SKIP user_style for speed - it's expensive and not critical for response quality
+            # user_style = await get_user_speech_style(user_uuid, limit_messages=15)  # EXPENSIVE - DISABLED
+            recent_messages = await get_recent_user_messages(user_uuid, conv_uuid, limit=2)  # Reduced from 3 to 2
             
             # Get conversation history and last assistant message
             conversation_history = None
             if conv_uuid:
                 try:
-                    messages = await get_messages_by_conversation(conv_uuid, limit=10)
+                    # Reduced to 2 messages for faster processing (was 4)
+                    messages = await get_messages_by_conversation(conv_uuid, limit=2)
                     # Format conversation history for LLaMA 2
                     conversation_history = [
                         {"role": msg.get("role"), "content": msg.get("text", "")}
@@ -396,9 +426,33 @@ async def generate_response(
                         last_assistant_message = assistant_messages[-1].get("text", "")
                 except Exception as e:
                     print(f"Warning: Failed to get conversation history: {e}")
+            db_time = time.time() - db_start
+            if db_time > 0.5:
+                print(f"⏱️  DB queries took {db_time:.2f}s")
         except Exception as e:
             # Don't fail if style analysis fails
             print(f"Warning: Failed to get user style context: {e}")
+    elif user_id and is_simple_query and conversation_id:
+        # For simple queries, just get minimal history (last 2 messages)
+        try:
+            from db_operations import get_messages_by_conversation
+            conv_uuid = uuid.UUID(conversation_id)
+            messages = await get_messages_by_conversation(conv_uuid, limit=2)
+            conversation_history = [
+                {"role": msg.get("role"), "content": msg.get("text", "")}
+                for msg in messages
+                if msg.get("role") in ["user", "assistant"]
+            ]
+            assistant_messages = [msg for msg in messages if msg.get("role") == "assistant"]
+            if assistant_messages:
+                last_assistant_message = assistant_messages[-1].get("text", "")
+        except Exception as e:
+            print(f"Warning: Failed to get conversation history: {e}")
+            conversation_history = []  # Ensure it's initialized even on error
+    
+    # CRITICAL: Ensure conversation_history is always a list, never None
+    if conversation_history is None:
+        conversation_history = []
     
     # Generate response using AI model if available, otherwise use mock
     try:
@@ -412,6 +466,8 @@ async def generate_response(
             # Validate warmth range
             warmth = max(0.0, min(1.0, warmth))
             
+            # Time the model generation
+            model_start = time.time()
             response_text = generate_therapeutic_response(
                 req.text.strip(), 
                 emotion, 
@@ -423,6 +479,9 @@ async def generate_response(
                 last_assistant_message=last_assistant_message,
                 conversation_history=conversation_history
             )
+            model_time = time.time() - model_start
+            if model_time > 2:
+                print(f"⏱️  Model generation took {model_time:.2f}s")
         else:
             # Fallback to mock responses
             response_index = len(req.text) % len(THERAPEUTIC_RESPONSES)
@@ -457,20 +516,28 @@ async def generate_response(
                 text=response_text
             )
             
-            # Check if we should update conversation summary
-            messages = await get_messages_by_conversation(conv_uuid, limit=100)
-            message_count = len(messages)
+            # OPTIMIZED: Don't load 100 messages just to count - use a faster method
+            # Instead, check summary update asynchronously or use a counter
+            # For now, skip the expensive query - summary updates can happen in background
+            # messages = await get_messages_by_conversation(conv_uuid, limit=100)  # EXPENSIVE - DISABLED
+            # message_count = len(messages)
             
-            # Update summary every 5 messages
-            from conversation_memory import should_summarize
-            if should_summarize(message_count, n_messages=5):
-                await update_conversation_summary(
-                    user_uuid,
-                    conv_uuid,
-                    {"role": "assistant", "text": response_text, "emotion": None}
-                )
+            # Update summary every 5 messages (skip for now to speed up response)
+            # Summary updates can be done in background task
+            # from conversation_memory import should_summarize
+            # if should_summarize(message_count, n_messages=5):
+            #     await update_conversation_summary(
+            #         user_uuid,
+            #         conv_uuid,
+            #         {"role": "assistant", "text": response_text, "emotion": None}
+            #     )
         except Exception as e:
             print(f"Warning: Failed to save messages to database: {e}")
+    
+    # Log total request time
+    total_time = time.time() - start_time
+    if total_time > 3:
+        print(f"⏱️  Total /api/respond time: {total_time:.2f}s")
     
     return ResponseResponse(
         response_text=response_text,
@@ -656,16 +723,35 @@ async def batch_clone_voice(
                 # Clone voice using ElevenLabs API (Instant Voice Cloning)
                 # The correct method is voices.ivc.create() for Instant Voice Cloning
                 try:
+                    import asyncio
                     from io import BytesIO
                     # Convert bytes to BytesIO objects for ElevenLabs API
                     file_io_objects = [BytesIO(f) for f in file_objects]
                     
-                    # Use Instant Voice Cloning (IVC) API
-                    voice = elevenlabs.voices.ivc.create(
-                        name=voice_name_final,
-                        files=file_io_objects
-                    )
-                    voice_id = voice.voice_id if hasattr(voice, 'voice_id') else str(voice)
+                    # Use Instant Voice Cloning (IVC) API with timeout protection
+                    # ElevenLabs API can be slow - use asyncio to add timeout
+                    print(f"Starting voice cloning with {len(file_io_objects)} samples (timeout: 90s)...")
+                    try:
+                        # Run the blocking call in a thread with timeout
+                        loop = asyncio.get_event_loop()
+                        voice = await asyncio.wait_for(
+                            loop.run_in_executor(
+                                None,
+                                lambda: elevenlabs.voices.ivc.create(
+                                    name=voice_name_final,
+                                    files=file_io_objects
+                                )
+                            ),
+                            timeout=90.0  # 90 second timeout
+                        )
+                        voice_id = voice.voice_id if hasattr(voice, 'voice_id') else str(voice)
+                    except asyncio.TimeoutError:
+                        print(f"ERROR: Voice cloning timed out after 90 seconds")
+                        voice_id = None
+                    except Exception as e:
+                        print(f"Warning: ElevenLabs voice cloning failed: {e}")
+                        print(f"Error details: {type(e).__name__}: {str(e)}")
+                        voice_id = None
                 except AttributeError:
                     # Fallback: Try alternative API methods if IVC doesn't exist
                     try:
@@ -695,21 +781,30 @@ async def batch_clone_voice(
         total_samples = len(saved_filenames)
         if DB_AVAILABLE and user_uuid:
             try:
-                from db_operations import get_voice_samples_by_user, update_user_voice_profile
+                from db_operations import get_voice_samples_by_user, create_voice_profile, get_voice_profiles_by_user
                 samples = await get_voice_samples_by_user(user_uuid)
                 total_samples = len(samples)
                 
-                # Save voice_id and voice_name to user record if voice was cloned
+                # Save voice_id and voice_name to voice_profiles table if voice was cloned
                 if voice_id and user_uuid:
                     try:
-                        await update_user_voice_profile(
+                        # Check existing profiles to determine if this should be active
+                        existing_profiles = await get_voice_profiles_by_user(user_uuid)
+                        is_first_profile = len(existing_profiles) == 0
+                        
+                        # Create new voice profile (will be set as active, deactivating others)
+                        new_profile = await create_voice_profile(
                             user_id=user_uuid,
                             voice_id=voice_id,
-                            voice_name=voice_name or f"Voice Profile"
+                            voice_name=voice_name or f"Voice Profile {len(existing_profiles) + 1}",
+                            set_as_active=True  # Always set new profile as active (deactivates others)
                         )
-                        print(f"Voice profile saved to database for user {user_uuid}")
+                        print(f"Voice profile '{new_profile['voice_name']}' saved to database for user {user_uuid}")
+                        print(f"Total profiles for user: {len(existing_profiles) + 1}")
                     except Exception as e:
                         print(f"Warning: Failed to save voice profile to database: {e}")
+                        import traceback
+                        traceback.print_exc()
             except Exception as e:
                 print(f"Warning: Failed to get sample count: {e}")
         

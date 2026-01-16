@@ -1,18 +1,12 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Onboarding.css';
 
 const Onboarding = () => {
   const navigate = useNavigate();
 
-  // Check if user already has a voice profile when component mounts
-  useEffect(() => {
-    const voiceId = localStorage.getItem('voice_id');
-    // If user already has a voice profile, skip to chat
-    if (voiceId) {
-      navigate('/chat');
-    }
-  }, [navigate]);
+  // Don't auto-redirect - let user click "Begin Journey" button
+  // Removed automatic redirect so user can see the welcome message
 
   const handleBeginJourney = () => {
     // Check if user has voice profile before navigating
